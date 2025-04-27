@@ -1,0 +1,65 @@
+name: Deploy Static Project Template
+
+on:
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        required: true
+        type: string
+      PROJECT_NAME:
+        required: true
+        type: string
+      REMOTE_DIR:
+        required: true
+        type: string
+      SSH_USER:
+        required: true
+        type: string
+      SSH_HOST:
+        required: true
+        type: string
+    secrets:
+      PEM_KEY:
+        required: true
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Static Project ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛒 Checkout código
+        uses: actions/checkout@v2
+
+      - name: 🛠️ Instalar dependências do projeto
+        run: yarn install
+
+      - name: 🏗️ Buildar o projeto
+        run: yarn build
+
+      - name: 🔍 Verificar conteúdo da pasta build
+        run: ls -la ./build
+
+      - name: 🛠️ Instalar rsync e cliente SSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync openssh-client
+
+      - name: 🔑 Configurar chave SSH privada
+        run: |
+          echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          chmod 600 ./deploy-key.pem
+
+      - name: 🔍 Criar diretório remoto se não existir
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} "sudo mkdir -p '${{ inputs.REMOTE_DIR }}' && sudo chown ${{ inputs.SSH_USER }}:${{ inputs.SSH_USER }} '${{ inputs.REMOTE_DIR }}'"
+
+      - name: 🚚 Enviar arquivos estáticos via rsync
+        run: |
+          rsync -avz --delete --progress --stats ./build/ \
+            -e "ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem" \
+            ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }}:"${{ inputs.REMOTE_DIR }}"
+
+      - name: 🧹 Apagar chave privada
+        if: always()
+        run: rm -f ./deploy-key.pem
