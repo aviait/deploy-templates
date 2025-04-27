@@ -1,0 +1,56 @@
+name: Deploy PRODUCTION Template
+
+on:
+  workflow_call:
+    inputs:
+      PROJECT_NAME:
+        required: true
+        type: string
+      REMOTE_DIR:
+        required: true
+        type: string
+    secrets:
+      PEM_KEY:
+        required: true
+
+jobs:
+  deploy:
+    name: 🚀 Deploy PRODUCTION ${{ inputs.PROJECT_NAME }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛒 Checkout código
+        uses: actions/checkout@v2
+
+      - name: 🛠️ Instalar dependências
+        run: yarn install
+
+      - name: 🏗️ Buildar o projeto
+        run: yarn build
+
+      - name: 🔎 Verificar conteúdo da pasta build
+        run: ls -la ./build
+
+      - name: 🛠️ Instalar dependências de deploy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync openssh-client
+
+      - name: 🔑 Configurar chave privada
+        run: |
+          echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          chmod 600 ./deploy-key.pem
+
+      - name: 🔍 Verificar e criar pasta no servidor
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem deploy@dns.aviait.com.br "sudo install -d -o deploy -g deploy '${{ inputs.REMOTE_DIR }}'"
+
+      - name: 🚚 Enviar arquivos via rsync
+        run: |
+          rsync -avz --delete --progress --stats ./build/ \
+            -e "ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem" \
+            deploy@dns.aviait.com.br:"${{ inputs.REMOTE_DIR }}"
+
+      - name: 🧹 Apagar chave privada
+        if: always()
+        run: rm -f ./deploy-key.pem
