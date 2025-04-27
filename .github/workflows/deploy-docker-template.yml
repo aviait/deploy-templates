@@ -31,6 +31,9 @@ on:
         required: false
         type: number
         default: 22
+    secrets:
+      PEM_KEY:
+        required: true
 
 jobs:
   deploy:
