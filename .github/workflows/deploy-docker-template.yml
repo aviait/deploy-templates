@@ -50,11 +50,6 @@ jobs:
       - name: 🏗️ Buildar o projeto
         run: yarn build
 
-    #   - name: 🛠️ Instalar Docker CLI e utilitários
-    #     run: |
-    #       sudo apt-get update
-    #       sudo apt-get install -y docker.io jq
-
       - name: 🔑 Configurar chave SSH privada
         run: |
           echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
