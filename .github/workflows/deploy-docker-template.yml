@@ -1,0 +1,88 @@
+name: Deploy Docker Project Template
+
+on:
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        required: true
+        type: string
+      PROJECT_NAME:
+        required: true
+        type: string
+      SSH_USER:
+        required: true
+        type: string
+      SSH_HOST:
+        required: true
+        type: string
+      DOCKER_IMAGE:
+        required: true
+        type: string
+      DOCKER_USERNAME:
+        required: true
+        type: string
+      DOCKER_PASSWORD:
+        required: true
+        type: string
+      DOCKER_RUN_ENVS:
+        required: true
+        type: string
+      SSH_REMOTE_PORT:
+        required: false
+        type: number
+        default: 22
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Docker Project ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛒 Checkout código
+        uses: actions/checkout@v2
+
+      - name: 🛠️ Instalar dependências do projeto
+        run: yarn install
+
+      - name: 🏗️ Buildar o projeto
+        run: yarn build
+
+      - name: 🛠️ Instalar Docker CLI e utilitários
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker.io jq
+
+      - name: 🔑 Configurar chave SSH privada
+        run: |
+          echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          chmod 600 ./deploy-key.pem
+
+      - name: 🔢 Pegar versão do projeto
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' ./package.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: 🐳 Login no Docker Hub
+        run: |
+          echo "${{ inputs.DOCKER_PASSWORD }}" | docker login -u "${{ inputs.DOCKER_USERNAME }}" --password-stdin
+
+      - name: 🐳 Build e Push da imagem Docker
+        run: |
+          docker build -t "${{ inputs.DOCKER_USERNAME }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}" .
+          docker push "${{ inputs.DOCKER_USERNAME }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
+
+      - name: 🚀 Atualizar container no servidor
+        run: |
+          ssh -o StrictHostKeyChecking=no -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} << EOF
+            docker pull "${{ inputs.DOCKER_USERNAME }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
+            docker stop ${{ inputs.DOCKER_IMAGE }} || true
+            docker rm ${{ inputs.DOCKER_IMAGE }} || true
+            docker run -d --restart unless-stopped --name ${{ inputs.DOCKER_IMAGE }} \
+              ${{ inputs.DOCKER_RUN_ENVS }} \
+              "${{ inputs.DOCKER_USERNAME }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
+          EOF
+
+      - name: 🧹 Apagar chave privada após deploy
+        if: always()
+        run: rm -f ./deploy-key.pem
