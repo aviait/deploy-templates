@@ -187,11 +187,6 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${{ inputs.DOCKER_RUN_ENVS }}" ] && [ -z "${{ inputs.DOCKER_RUN_ENVS_FILE }}" ]; then
-            echo "::error::Informe DOCKER_RUN_ENVS ou DOCKER_RUN_ENVS_FILE."
-            exit 1
-          fi
-
           if ! [[ "${{ inputs.IMAGE_RETENTION_COUNT }}" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::IMAGE_RETENTION_COUNT deve ser um número inteiro maior que zero."
             exit 1
@@ -314,7 +309,10 @@ jobs:
             bash -s << 'EOF'
             set -euo pipefail
 
-            DOCKER_RUN_ENVS=$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d)
+            DOCKER_RUN_ENVS=""
+            if [ -n "${DOCKER_RUN_ENVS_B64}" ]; then
+              DOCKER_RUN_ENVS=$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d)
+            fi
 
             DOCKER_ENV_OPTS="${DOCKER_RUN_ENVS}"
             TMP_ENV_FILE=""
