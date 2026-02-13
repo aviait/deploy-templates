@@ -9,79 +9,43 @@ on:
       PROJECT_NAME:
         required: true
         type: string
+
       NODE_VERSION:
         required: false
         type: string
         default: "20"
+
       VERSION_CMD:
         required: false
         type: string
         default: "node -p \"require('./package.json').version\""
+
       PACKAGE_MANAGER:
         required: false
         type: string
         default: "yarn"
+
       INSTALL_CMD:
         required: false
         type: string
         default: "yarn install --immutable"
+
       BUILD_CMD:
         required: false
         type: string
         default: "yarn build"
+
       CACHE_DEPENDENCY_PATH:
         required: false
         type: string
         default: ""
+
       SSH_USER:
         required: true
         type: string
       SSH_HOST:
         required: true
         type: string
-      DOCKER_IMAGE:
-        required: true
-        type: string
-      CONTAINER_NAME:
-        required: false
-        type: string
-        default: ""
-      DOCKER_USERNAME:
-        required: false
-        type: string
-        default: ""
-      DOCKER_PASSWORD:
-        required: false
-        type: string
-        default: ""
-      DOCKER_RUN_ENVS:
-        required: false
-        type: string
-        default: ""
-      DOCKER_RUN_ENVS_FILE:
-        required: false
-        type: string
-        default: ""
-      DOCKER_PLATFORM:
-        required: false
-        type: string
-        default: linux/amd64
-      DOCKER_BUILD_ARGS:
-        required: false
-        type: string
-        default: ""
-      REGISTRY:
-        required: false
-        type: string
-        default: docker.io
-      IMAGE_NAMESPACE:
-        required: false
-        type: string
-        default: ""
-      IMAGE_RETENTION_COUNT:
-        required: false
-        type: number
-        default: 5
       SSH_REMOTE_PORT:
         required: false
         type: number
@@ -90,10 +54,62 @@ on:
         required: false
         type: string
         default: ""
+
+      DOCKER_IMAGE:
+        required: true
+        type: string
+
+      CONTAINER_NAME:
+        required: false
+        type: string
+        default: ""
+
+      DOCKER_USERNAME:
+        required: false
+        type: string
+        default: ""
+      DOCKER_PASSWORD:
+        required: false
+        type: string
+        default: ""
+
+      DOCKER_RUN_ENVS:
+        required: false
+        type: string
+        default: ""
+      DOCKER_RUN_ENVS_FILE:
+        required: false
+        type: string
+        default: ""
+
+      DOCKER_PLATFORM:
+        required: false
+        type: string
+        default: linux/amd64
+      DOCKER_BUILD_ARGS:
+        required: false
+        type: string
+        default: ""
+
+      REGISTRY:
+        required: false
+        type: string
+        default: docker.io
+      IMAGE_NAMESPACE:
+        required: false
+        type: string
+        default: ""
+
+      IMAGE_RETENTION_COUNT:
+        required: false
+        type: number
+        default: 5
+
       REMOTE_DOCKER_LOGIN:
         required: false
         type: boolean
         default: true
+
       HEALTHCHECK_URL:
         required: false
         type: string
@@ -106,10 +122,12 @@ on:
         required: false
         type: number
         default: 5
+
       PRUNE_RUNNER:
         required: false
         type: boolean
         default: true
+
     secrets:
       PEM_KEY:
         required: true
@@ -123,18 +141,24 @@ jobs:
     name: 🚀 Deploy Docker Project ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     concurrency:
       group: deploy-docker-${{ inputs.PROJECT_NAME }}-${{ inputs.ENVIRONMENT }}
       cancel-in-progress: true
+
     permissions:
       contents: read
+
     environment: ${{ inputs.ENVIRONMENT }}
+
     defaults:
       run:
         shell: bash
+
     outputs:
       version: ${{ steps.version.outputs.version }}
       image_ref: ${{ steps.image_metadata.outputs.image_ref }}
+
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_USERNAME || inputs.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD != '' && secrets.DOCKER_PASSWORD || inputs.DOCKER_PASSWORD }}
@@ -145,7 +169,7 @@ jobs:
       - name: 🛒 Checkout código
         uses: actions/checkout@v6
 
-      - name: 🧰 Configurar Node (cache customizado)
+      - name: 🧰 Setup Node (cache customizado)
         if: ${{ inputs.CACHE_DEPENDENCY_PATH != '' }}
         uses: actions/setup-node@v6
         with:
@@ -153,17 +177,19 @@ jobs:
           cache: ${{ inputs.PACKAGE_MANAGER }}
           cache-dependency-path: ${{ inputs.CACHE_DEPENDENCY_PATH }}
 
-      - name: 🧰 Configurar Node
+      - name: 🧰 Setup Node
         if: ${{ inputs.CACHE_DEPENDENCY_PATH == '' }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.NODE_VERSION }}
           cache: ${{ inputs.PACKAGE_MANAGER }}
 
-      - name: ✅ Validar credenciais Docker
+      - name: ✅ Validar inputs essenciais
         run: |
+          set -euo pipefail
+
           if ! [[ "${{ inputs.PACKAGE_MANAGER }}" =~ ^(npm|yarn|pnpm)$ ]]; then
-            echo "::error::PACKAGE_MANAGER deve ser um destes valores: npm, yarn, pnpm."
+            echo "::error::PACKAGE_MANAGER deve ser: npm, yarn ou pnpm."
             exit 1
           fi
 
@@ -178,7 +204,7 @@ jobs:
           fi
 
           if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
-            echo "::error::Informe DOCKER_USERNAME/DOCKER_PASSWORD via secrets ou via inputs."
+            echo "::error::Informe DOCKER_USERNAME/DOCKER_PASSWORD via secrets ou inputs."
             exit 1
           fi
 
@@ -188,64 +214,86 @@ jobs:
           fi
 
           if ! [[ "${{ inputs.IMAGE_RETENTION_COUNT }}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::IMAGE_RETENTION_COUNT deve ser um número inteiro maior que zero."
+            echo "::error::IMAGE_RETENTION_COUNT deve ser inteiro > 0."
             exit 1
           fi
 
-      - name: 🛠️ Instalar dependências do projeto
+          # DOCKER_RUN_ENVS e DOCKER_RUN_ENVS_FILE são opcionais (não valida aqui)
+
+      - name: 🛠️ Instalar dependências
         run: ${{ inputs.INSTALL_CMD }}
 
-      - name: 🏗️ Buildar o projeto
+      - name: 🏗️ Build do projeto
         run: ${{ inputs.BUILD_CMD }}
 
-      - name: 🔐 Registrar host SSH em known_hosts
+      - name: 🔐 known_hosts (sem quebrar com porta vazia)
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
           if [ -n "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
             printf '%s\n' "${{ inputs.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           fi
-          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+
+          HOST="${{ inputs.SSH_HOST }}"
+          PORT="${{ inputs.SSH_REMOTE_PORT }}"
+
+          if [ -z "${HOST}" ]; then
+            echo "::error::SSH_HOST está vazio."
+            exit 1
+          fi
+
+          if [ -n "${PORT}" ]; then
+            ssh-keyscan -T 10 -H -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 10 -H "${HOST}" >> ~/.ssh/known_hosts
+          fi
+
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: 🔑 Configurar chave SSH privada
+      - name: 🔑 Chave SSH privada
         run: |
-          echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          set -euo pipefail
+          printf '%s\n' "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
           chmod 600 ./deploy-key.pem
 
-      - name: 🔢 Pegar versão do projeto
+      - name: 🔢 Versão do projeto
         id: version
         run: |
+          set -euo pipefail
           VERSION_CMD=$(cat << 'CMD'
           ${{ inputs.VERSION_CMD }}
           CMD
           )
           VERSION=$(bash -lc "${VERSION_CMD}")
           if [ -z "${VERSION}" ]; then
-            echo "::error::VERSION_CMD retornou valor vazio."
+            echo "::error::VERSION_CMD retornou vazio."
             exit 1
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 🪪 Registrar metadados da imagem
+      - name: 🪪 Metadata da imagem
         id: image_metadata
         run: |
+          set -euo pipefail
           IMAGE_REF="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${VERSION}"
-          echo "IMAGE_REF=${IMAGE_REF}" >> $GITHUB_ENV
-          echo "image_ref=${IMAGE_REF}" >> $GITHUB_OUTPUT
+          echo "IMAGE_REF=${IMAGE_REF}" >> "$GITHUB_ENV"
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
 
-      - name: 🏗️ Configurar Docker Buildx
+      - name: 🏗️ Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Login no Docker Hub
+      - name: 🐳 Docker login
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
 
-      - name: 🐳 Build e Push da imagem Docker (com cache)
+      - name: 🐳 Build e Push (cache GHA)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -264,71 +312,83 @@ jobs:
             org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.repository }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp || github.run_id }}
+            org.opencontainers.image.created=${{ github.run_started_at }}
 
       - name: 🚀 Atualizar container no servidor
         run: |
+          set -euo pipefail
+
           IMAGE_REF="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
           REPOSITORY="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}"
+
           SERVICE_NAME="${{ inputs.CONTAINER_NAME }}"
           if [ -z "${SERVICE_NAME}" ]; then
             SERVICE_NAME="${{ inputs.DOCKER_IMAGE }}"
           fi
-          KEEP_IMAGES=${{ inputs.IMAGE_RETENTION_COUNT }}
+
+          KEEP_IMAGES="${{ inputs.IMAGE_RETENTION_COUNT }}"
           REMOTE_DOCKER_LOGIN="${{ inputs.REMOTE_DOCKER_LOGIN }}"
+
+          # ENVS opcionais
           DOCKER_ENV_MODE="inline"
-          DOCKER_RUN_ENVS_B64=$(printf '%s' "${{ inputs.DOCKER_RUN_ENVS }}" | base64 | tr -d '\n')
+          DOCKER_RUN_ENVS_B64="$(printf '%s' "${{ inputs.DOCKER_RUN_ENVS }}" | base64 | tr -d '\n')"
           DOCKER_RUN_ENVS_FILE_B64=""
 
           if [ -n "${{ inputs.DOCKER_RUN_ENVS_FILE }}" ]; then
             DOCKER_ENV_MODE="file"
-            DOCKER_RUN_ENVS_FILE_B64=$(printf '%s\n' "${{ inputs.DOCKER_RUN_ENVS_FILE }}" | base64 | tr -d '\n')
+            DOCKER_RUN_ENVS_FILE_B64="$(printf '%s\n' "${{ inputs.DOCKER_RUN_ENVS_FILE }}" | base64 | tr -d '\n')"
           fi
 
           HEALTHCHECK_URL="${{ inputs.HEALTHCHECK_URL }}"
-          HEALTHCHECK_RETRIES=${{ inputs.HEALTHCHECK_RETRIES }}
-          HEALTHCHECK_DELAY=${{ inputs.HEALTHCHECK_DELAY }}
+          HEALTHCHECK_RETRIES="${{ inputs.HEALTHCHECK_RETRIES }}"
+          HEALTHCHECK_DELAY="${{ inputs.HEALTHCHECK_DELAY }}"
 
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem \
-            ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} \
-            env \
-            DOCKER_USERNAME="${DOCKER_USERNAME}" \
-            DOCKER_PASSWORD="${DOCKER_PASSWORD}" \
-            REGISTRY="${REGISTRY}" \
-            IMAGE_REF="${IMAGE_REF}" \
-            REPOSITORY="${REPOSITORY}" \
-            KEEP_IMAGES="${KEEP_IMAGES}" \
-            SERVICE_NAME="${SERVICE_NAME}" \
-            DOCKER_ENV_MODE="${DOCKER_ENV_MODE}" \
-            DOCKER_RUN_ENVS_B64="${DOCKER_RUN_ENVS_B64}" \
-            DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
-            REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
-            HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
-            HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES}" \
-            HEALTHCHECK_DELAY="${HEALTHCHECK_DELAY}" \
-            bash -s << 'EOF'
+          ssh -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ConnectTimeout=10 \
+              -p "${{ inputs.SSH_REMOTE_PORT }}" \
+              -i ./deploy-key.pem \
+              "${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }}" \
+              env \
+              DOCKER_USERNAME="${DOCKER_USERNAME}" \
+              DOCKER_PASSWORD="${DOCKER_PASSWORD}" \
+              REGISTRY="${REGISTRY}" \
+              IMAGE_REF="${IMAGE_REF}" \
+              REPOSITORY="${REPOSITORY}" \
+              KEEP_IMAGES="${KEEP_IMAGES}" \
+              SERVICE_NAME="${SERVICE_NAME}" \
+              DOCKER_ENV_MODE="${DOCKER_ENV_MODE}" \
+              DOCKER_RUN_ENVS_B64="${DOCKER_RUN_ENVS_B64}" \
+              DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
+              REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
+              HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
+              HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES}" \
+              HEALTHCHECK_DELAY="${HEALTHCHECK_DELAY}" \
+              bash -s << 'EOF'
             set -euo pipefail
 
             DOCKER_RUN_ENVS=""
             if [ -n "${DOCKER_RUN_ENVS_B64}" ]; then
-              DOCKER_RUN_ENVS=$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d)
+              DOCKER_RUN_ENVS="$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d)"
             fi
 
             DOCKER_ENV_OPTS="${DOCKER_RUN_ENVS}"
             TMP_ENV_FILE=""
+
             cleanup_tmp_env_file() {
               if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
                 rm -f "${TMP_ENV_FILE}"
               fi
             }
             trap cleanup_tmp_env_file EXIT
+
             if [ "${DOCKER_ENV_MODE}" = "file" ]; then
-              TMP_ENV_FILE=$(mktemp)
+              TMP_ENV_FILE="$(mktemp)"
               printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
               DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE} ${DOCKER_ENV_OPTS}"
             fi
 
-            PREVIOUS_IMAGE_ID=$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)
+            PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
               echo "${DOCKER_PASSWORD}" | docker login "${REGISTRY}" -u "${DOCKER_USERNAME}" --password-stdin
@@ -353,7 +413,7 @@ jobs:
 
             sleep 5
             if ! docker ps --filter "name=${SERVICE_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
-              echo "Container não está em execução após o deploy; rollback."
+              echo "Container não está em execução após deploy; rollback."
               docker stop "${SERVICE_NAME}" || true
               docker rm "${SERVICE_NAME}" || true
               if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
@@ -365,51 +425,51 @@ jobs:
             fi
 
             if [ -n "${HEALTHCHECK_URL}" ]; then
-              if ! command -v curl >/dev/null 2>&1; then
-                echo "curl não encontrado no servidor; pulando healthcheck solicitado."
-              else
-              attempt=1
-              success=0
-              while [ $attempt -le "${HEALTHCHECK_RETRIES}" ]; do
-                if curl -fsSL --max-time 5 "${HEALTHCHECK_URL}"; then
-                  success=1
-                  break
-                fi
-                echo "Healthcheck falhou (tentativa ${attempt}/${HEALTHCHECK_RETRIES}); aguardando ${HEALTHCHECK_DELAY}s"
-                attempt=$((attempt+1))
-                sleep "${HEALTHCHECK_DELAY}"
-              done
+              if command -v curl >/dev/null 2>&1; then
+                attempt=1
+                success=0
+                while [ $attempt -le "${HEALTHCHECK_RETRIES}" ]; do
+                  if curl -fsSL --max-time 5 "${HEALTHCHECK_URL}"; then
+                    success=1
+                    break
+                  fi
+                  echo "Healthcheck falhou (tentativa ${attempt}/${HEALTHCHECK_RETRIES}); aguardando ${HEALTHCHECK_DELAY}s"
+                  attempt=$((attempt+1))
+                  sleep "${HEALTHCHECK_DELAY}"
+                done
 
-              if [ $success -ne 1 ]; then
-                echo "Healthcheck não passou; rollback."
-                docker stop "${SERVICE_NAME}" || true
-                docker rm "${SERVICE_NAME}" || true
-                if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                  docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-                    ${DOCKER_ENV_OPTS} \
-                    "${PREVIOUS_IMAGE_ID}" || true
+                if [ $success -ne 1 ]; then
+                  echo "Healthcheck não passou; rollback."
+                  docker stop "${SERVICE_NAME}" || true
+                  docker rm "${SERVICE_NAME}" || true
+                  if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
+                    docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
+                      ${DOCKER_ENV_OPTS} \
+                      "${PREVIOUS_IMAGE_ID}" || true
+                  fi
+                  exit 1
                 fi
-                exit 1
-              fi
+              else
+                echo "curl não encontrado; pulando healthcheck."
               fi
             fi
 
-            OLD_IMAGE_IDS=$(docker image ls "${REPOSITORY}" --format '{{.CreatedAt}} {{.ID}}' | sort -r | awk "NR>${KEEP_IMAGES}{print \$2}")
+            OLD_IMAGE_IDS="$(docker image ls "${REPOSITORY}" --format '{{.CreatedAt}} {{.ID}}' | sort -r | awk "NR>${KEEP_IMAGES}{print \$2}")"
             if [ -n "${OLD_IMAGE_IDS}" ]; then
               echo "${OLD_IMAGE_IDS}" | xargs -r docker image rm -f || true
             fi
             docker image prune -f >/dev/null 2>&1 || true
           EOF
 
-      - name: 🧹 Apagar chave privada após deploy
+      - name: 🧹 Remover chave privada
         if: always()
         run: rm -f ./deploy-key.pem
 
-      - name: 🧹 Limpar imagens locais do runner
+      - name: 🧹 Limpar runner
         if: ${{ always() && inputs.PRUNE_RUNNER }}
         run: docker system prune -af --volumes || true
 
-      - name: 📝 Resumo do deploy
+      - name: 📝 Resumo
         if: always()
         run: |
           {
@@ -419,4 +479,4 @@ jobs:
             echo "- Imagem: ${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
             echo "- Plataforma: ${{ inputs.DOCKER_PLATFORM }}"
             echo "- Imagens retidas: ${{ inputs.IMAGE_RETENTION_COUNT }}"
-          } >> $GITHUB_STEP_SUMMARY
+          } >> "$GITHUB_STEP_SUMMARY"
