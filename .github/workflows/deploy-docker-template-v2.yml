@@ -201,7 +201,50 @@ jobs:
           SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
-          node -e "const vars=JSON.parse(process.env.VARS_JSON||'{}'); const secrets=JSON.parse(process.env.SECRETS_JSON||'{}'); const norm=k=>k.startsWith('ENV_')?k.slice(4):k; const out={}; const src={}; for(const [k,v] of Object.entries(vars)){ if(v==null) continue; const kk=norm(k); if(!kk) continue; out[kk]=String(v); src[kk]=`var(${k})`; } for(const [k,v] of Object.entries(secrets)){ if(!k.startsWith('ENV_')||v==null) continue; const kk=k.slice(4); if(!kk) continue; out[kk]=String(v); src[kk]=`secret(${k})`; } const mask=(s)=>{ s=String(s??''); if(!s) return '(vazio)'; if(s.length<=4) return '*'.repeat(s.length); return s.slice(0,2)+'***'+s.slice(-2)+` (len ${s.length})`; }; const keys=Object.keys(out).sort(); console.log('--- ENV efetivas que irão para o container ---'); for(const k of keys){ const from=src[k]||'?'; const valMasked = from.startsWith('secret(') ? '*** (secret)' : mask(out[k]); console.log(`${k} = ${valMasked}  <= ${from}`); } console.log('-------------------------------------------'); if(!keys.length){ console.log('(nenhuma env encontrada via vars/secrets)'); }"
+          node <<'NODE'
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+          const secrets = JSON.parse(process.env.SECRETS_JSON || '{}');
+
+          function norm(k) { return k.startsWith('ENV_') ? k.slice(4) : k; }
+
+          const out = {};
+          const src = {};
+
+          // Vars: entram todas
+          for (const [k, v] of Object.entries(vars)) {
+            if (v == null) continue;
+            const kk = norm(k);
+            if (!kk) continue;
+            out[kk] = String(v);
+            src[kk] = 'var(' + k + ')';
+          }
+
+          // Secrets: só ENV_*
+          for (const [k, v] of Object.entries(secrets)) {
+            if (!k.startsWith('ENV_') || v == null) continue;
+            const kk = k.slice(4);
+            if (!kk) continue;
+            out[kk] = String(v); // sobrescreve var
+            src[kk] = 'secret(' + k + ')';
+          }
+
+          function mask(s) {
+            s = String(s || '');
+            if (!s) return '(vazio)';
+            if (s.length <= 4) return '*'.repeat(s.length);
+            return s.slice(0, 2) + '***' + s.slice(-2) + ' (len ' + s.length + ')';
+          }
+
+          const keys = Object.keys(out).sort();
+          console.log('--- ENV efetivas que irão para o container ---');
+          if (keys.length === 0) console.log('(nenhuma env encontrada via vars/secrets)');
+          for (const k of keys) {
+            const from = src[k] || '?';
+            const valMasked = from.startsWith('secret(') ? '*** (secret)' : mask(out[k]);
+            console.log(k + ' = ' + valMasked + '  <= ' + from);
+          }
+          console.log('-------------------------------------------');
+          NODE
 
       - name: "🧾 Gerar .env do container (vars: tudo | secrets: só ENV_*)"
         env:
@@ -209,7 +252,42 @@ jobs:
           SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
-          node -e "const fs=require('fs');const vars=JSON.parse(process.env.VARS_JSON||'{}');const secrets=JSON.parse(process.env.SECRETS_JSON||'{}');const out={};const norm=k=>k.startsWith('ENV_')?k.slice(4):k;for(const [k,v] of Object.entries(vars)){if(v!=null){const kk=norm(k);if(kk)out[kk]=String(v);}}for(const [k,v] of Object.entries(secrets)){if(k.startsWith('ENV_')&&v!=null){const kk=k.slice(4);if(kk)out[kk]=String(v);}}const safe={};for(const [k,v] of Object.entries(out)){if(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))safe[k]=v;}const lines=Object.keys(safe).sort().map(k=>k+'='+safe[k]).join('\n');fs.writeFileSync('.runtime.env', lines?lines+'\\n':'');"
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+          const secrets = JSON.parse(process.env.SECRETS_JSON || '{}');
+
+          function norm(k) { return k.startsWith('ENV_') ? k.slice(4) : k; }
+
+          const out = {};
+
+          // Vars: entram todas
+          for (const [k, v] of Object.entries(vars)) {
+            if (v == null) continue;
+            const kk = norm(k);
+            if (!kk) continue;
+            out[kk] = String(v);
+          }
+
+          // Secrets: só ENV_* (sobrescreve)
+          for (const [k, v] of Object.entries(secrets)) {
+            if (!k.startsWith('ENV_') || v == null) continue;
+            const kk = k.slice(4);
+            if (!kk) continue;
+            out[kk] = String(v);
+          }
+
+          // nomes válidos
+          const safe = {};
+          for (const [k, v] of Object.entries(out)) {
+            if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) safe[k] = v;
+          }
+
+          const lines = Object.keys(safe).sort().map(k => k + '=' + safe[k]).join('\n');
+          fs.writeFileSync('.runtime.env', lines ? lines + '\n' : '');
+          NODE
+
           chmod 600 .runtime.env
 
       - name: "🛠️ Instalar dependências"
@@ -218,7 +296,7 @@ jobs:
       - name: "🏗️ Build do projeto"
         run: ${{ inputs.BUILD_CMD }}
 
-      - name: "🔐 known_hosts (porta não quebra)"
+      - name: "🔐 known_hosts"
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -236,12 +314,7 @@ jobs:
             exit 1
           fi
 
-          if [ -n "${PORT}" ]; then
-            ssh-keyscan -T 10 -H -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
-          else
-            ssh-keyscan -T 10 -H "${HOST}" >> ~/.ssh/known_hosts
-          fi
-
+          ssh-keyscan -T 10 -H -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
@@ -367,17 +440,23 @@ jobs:
               TMP_ENV_FILE="$(mktemp)"
               printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
               DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE}"
-
-              # PORT vem de vars e está no env-file como PORT=xxxx
-              PORT_HOST="$(grep -E '^[[:space:]]*PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
-              if [ -n "${PORT_HOST}" ]; then
-                if ! echo "${PORT_HOST}" | grep -Eq '^[0-9]+$'; then
-                  echo "PORT inválido no env-file: '${PORT_HOST}'"
-                  exit 1
-                fi
-                PORT_OPT="-p ${PORT_HOST}:80"
-              fi
             fi
+
+            if [ -z "${TMP_ENV_FILE}" ] || [ ! -s "${TMP_ENV_FILE}" ]; then
+              echo "Env-file não gerado. Verifique vars/secrets."
+              exit 1
+            fi
+
+            PORT="$(grep -E '^[[:space:]]*PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
+            if [ -z "${PORT}" ]; then
+              echo "PORT não definido nas vars do GitHub (ex: PORT=3005)."
+              exit 1
+            fi
+            if ! echo "${PORT}" | grep -Eq '^[0-9]+$'; then
+              echo "PORT inválido: '${PORT}'"
+              exit 1
+            fi
+            PORT_OPT="-p ${PORT}:80"
 
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
