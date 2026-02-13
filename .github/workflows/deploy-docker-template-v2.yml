@@ -108,13 +108,17 @@ on:
         required: false
         type: boolean
         default: true
+      DOCKER_USERNAME:
+        required: false
+        type: boolean
+        default: true
+      DOCKER_PASSWORD:
+        required: false
+        type: boolean
+        default: true
 
     secrets:
       PEM_KEY:
-        required: true
-      DOCKER_USERNAME:
-        required: true
-      DOCKER_PASSWORD:
         required: true
 
 jobs:
