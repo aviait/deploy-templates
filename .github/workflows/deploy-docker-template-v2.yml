@@ -108,14 +108,6 @@ on:
         required: false
         type: boolean
         default: true
-      DOCKER_USERNAME:
-        required: false
-        type: boolean
-        default: true
-      DOCKER_PASSWORD:
-        required: false
-        type: boolean
-        default: true
 
     secrets:
       PEM_KEY:
@@ -145,10 +137,10 @@ jobs:
       image_ref: ${{ steps.image_metadata.outputs.image_ref }}
 
     env:
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ vars.DOCKER_PASSWORD }}
       REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || secrets.DOCKER_USERNAME }}
+      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || vars.DOCKER_USERNAME }}
 
     steps:
       - name: "🛒 Checkout código"
@@ -189,7 +181,7 @@ jobs:
           fi
 
           if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
-            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD precisam estar em secrets."
+            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD precisam estar em vars."
             exit 1
           fi
 
@@ -379,17 +371,9 @@ jobs:
             docker stop "${SERVICE_NAME}" || true
             docker rm "${SERVICE_NAME}" || true
 
-            if ! docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
+            docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
               ${DOCKER_ENV_OPTS} \
-              "${IMAGE_REF}"; then
-              echo "Falha ao subir nova versão; tentando rollback..."
-              if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-                  ${DOCKER_ENV_OPTS} \
-                  "${PREVIOUS_IMAGE_ID}" || true
-              fi
-              exit 1
-            fi
+              "${IMAGE_REF}"
 
             sleep 5
             if ! docker ps --filter "name=${SERVICE_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
