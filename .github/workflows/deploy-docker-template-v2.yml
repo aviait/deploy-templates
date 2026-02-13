@@ -195,7 +195,7 @@ jobs:
             exit 1
           fi
 
-      - name: "🔎 Debug: variáveis/secrets considerados (mascarados)"
+      - name: "🔎 Debug: variáveis/secrets considerados (vars sem máscara)"
         env:
           VARS_JSON: ${{ toJSON(vars) }}
           SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -210,7 +210,6 @@ jobs:
           const out = {};
           const src = {};
 
-          // Vars: entram todas
           for (const [k, v] of Object.entries(vars)) {
             if (v == null) continue;
             const kk = norm(k);
@@ -219,31 +218,31 @@ jobs:
             src[kk] = 'var(' + k + ')';
           }
 
-          // Secrets: só ENV_*
           for (const [k, v] of Object.entries(secrets)) {
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
             if (!kk) continue;
-            out[kk] = String(v); // sobrescreve var
+            out[kk] = String(v);
             src[kk] = 'secret(' + k + ')';
-          }
-
-          function mask(s) {
-            s = String(s || '');
-            if (!s) return '(vazio)';
-            if (s.length <= 4) return '*'.repeat(s.length);
-            return s.slice(0, 2) + '***' + s.slice(-2) + ' (len ' + s.length + ')';
           }
 
           const keys = Object.keys(out).sort();
           console.log('--- ENV efetivas que irão para o container ---');
-          if (keys.length === 0) console.log('(nenhuma env encontrada via vars/secrets)');
+          if (!keys.length) console.log('(nenhuma env encontrada via vars/secrets)');
           for (const k of keys) {
             const from = src[k] || '?';
-            const valMasked = from.startsWith('secret(') ? '*** (secret)' : mask(out[k]);
-            console.log(k + ' = ' + valMasked + '  <= ' + from);
+            const val = from.startsWith('secret(') ? '*** (secret)' : JSON.stringify(out[k]);
+            console.log(k + ' = ' + val + '  <= ' + from);
           }
           console.log('-------------------------------------------');
+
+          // dica explícita pra portas
+          if (!('HOST_PORT' in out)) {
+            console.log('ATENÇÃO: HOST_PORT não encontrado nas vars. Ex: HOST_PORT=3005');
+          }
+          if (!('PORT' in out)) {
+            console.log('INFO: PORT não encontrado; vai assumir 80 no deploy (porta do container).');
+          }
           NODE
 
       - name: "🧾 Gerar .env do container (vars: tudo | secrets: só ENV_*)"
@@ -262,7 +261,6 @@ jobs:
 
           const out = {};
 
-          // Vars: entram todas
           for (const [k, v] of Object.entries(vars)) {
             if (v == null) continue;
             const kk = norm(k);
@@ -270,7 +268,6 @@ jobs:
             out[kk] = String(v);
           }
 
-          // Secrets: só ENV_* (sobrescreve)
           for (const [k, v] of Object.entries(secrets)) {
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
@@ -278,7 +275,9 @@ jobs:
             out[kk] = String(v);
           }
 
-          // nomes válidos
+          // default: PORT (porta do container) = 80
+          if (!('PORT' in out) || String(out.PORT).trim() === '') out.PORT = '80';
+
           const safe = {};
           for (const [k, v] of Object.entries(out)) {
             if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) safe[k] = v;
@@ -447,16 +446,29 @@ jobs:
               exit 1
             fi
 
+            HOST_PORT="$(grep -E '^[[:space:]]*HOST_PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
             PORT="$(grep -E '^[[:space:]]*PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
+
             if [ -z "${PORT}" ]; then
-              echo "PORT não definido nas vars do GitHub (ex: PORT=3005)."
+              PORT="80"
+            fi
+
+            if [ -z "${HOST_PORT}" ]; then
+              echo "HOST_PORT não definido nas vars do GitHub (ex: HOST_PORT=3005)."
               exit 1
             fi
+
+            if ! echo "${HOST_PORT}" | grep -Eq '^[0-9]+$'; then
+              echo "HOST_PORT inválido: '${HOST_PORT}'"
+              exit 1
+            fi
+
             if ! echo "${PORT}" | grep -Eq '^[0-9]+$'; then
               echo "PORT inválido: '${PORT}'"
               exit 1
             fi
-            PORT_OPT="-p ${PORT}:80"
+
+            PORT_OPT="-p ${HOST_PORT}:${PORT}"
 
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
