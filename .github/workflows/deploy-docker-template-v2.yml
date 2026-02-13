@@ -206,55 +206,12 @@ jobs:
         run: ${{ inputs.BUILD_CMD }}
 
       - name: "🧾 Gerar .env do container (vars: tudo | secrets: só ENV_*)"
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
-
-          python3 - <<'PY'
-import json, re
-
-vars_json = r'''${{ toJSON(vars) }}'''
-secrets_json = r'''${{ toJSON(secrets) }}'''
-
-vars_obj = json.loads(vars_json) if vars_json.strip() else {}
-secrets_obj = json.loads(secrets_json) if secrets_json.strip() else {}
-
-out = {}
-
-def normalize_key(k):
-  return k[4:] if k.startswith("ENV_") else k
-
-# Vars: entra tudo
-for k, v in vars_obj.items():
-  if v is None:
-    continue
-  key = normalize_key(k)
-  if not key:
-    continue
-  out[key] = str(v)
-
-# Secrets: só ENV_* (sobrescreve vars)
-for k, v in secrets_obj.items():
-  if not k.startswith("ENV_"):
-    continue
-  if v is None:
-    continue
-  key = k[4:]
-  if not key:
-    continue
-  out[key] = str(v)
-
-safe = {}
-for k, v in out.items():
-  if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', k):
-    safe[k] = v
-
-lines = [f"{k}={safe[k]}" for k in sorted(safe.keys())]
-content = "\n".join(lines).strip() + ("\n" if lines else "")
-
-with open(".runtime.env", "w", encoding="utf-8") as f:
-  f.write(content)
-PY
-
+          node -e "const fs=require('fs');const vars=JSON.parse(process.env.VARS_JSON||'{}');const secrets=JSON.parse(process.env.SECRETS_JSON||'{}');const out={};const norm=k=>k.startsWith('ENV_')?k.slice(4):k;for(const [k,v] of Object.entries(vars)){if(v!=null){const kk=norm(k);if(kk)out[kk]=String(v);}}for(const [k,v] of Object.entries(secrets)){if(k.startsWith('ENV_')&&v!=null){const kk=k.slice(4);if(kk)out[kk]=String(v);}}const safe={};for(const [k,v] of Object.entries(out)){if(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))safe[k]=v;}const lines=Object.keys(safe).sort().map(k=>k+'='+safe[k]).join('\n');fs.writeFileSync('.runtime.env', lines?lines+'\\n':'');"
           chmod 600 .runtime.env
 
       - name: "🔐 known_hosts (porta não quebra)"
@@ -364,11 +321,8 @@ PY
           HEALTHCHECK_RETRIES="${{ inputs.HEALTHCHECK_RETRIES }}"
           HEALTHCHECK_DELAY="${{ inputs.HEALTHCHECK_DELAY }}"
 
-          DOCKER_ENV_MODE="inline"
           DOCKER_RUN_ENVS_FILE_B64=""
-
           if [ -s ".runtime.env" ]; then
-            DOCKER_ENV_MODE="file"
             DOCKER_RUN_ENVS_FILE_B64="$(base64 -w0 .runtime.env 2>/dev/null || base64 .runtime.env | tr -d '\n')"
           fi
 
@@ -386,7 +340,6 @@ PY
               REPOSITORY="${REPOSITORY}" \
               KEEP_IMAGES="${KEEP_IMAGES}" \
               SERVICE_NAME="${SERVICE_NAME}" \
-              DOCKER_ENV_MODE="${DOCKER_ENV_MODE}" \
               DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
               REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
               HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
@@ -405,7 +358,7 @@ PY
             }
             trap cleanup_tmp_env_file EXIT
 
-            if [ "${DOCKER_ENV_MODE}" = "file" ] && [ -n "${DOCKER_RUN_ENVS_FILE_B64}" ]; then
+            if [ -n "${DOCKER_RUN_ENVS_FILE_B64}" ]; then
               TMP_ENV_FILE="$(mktemp)"
               printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
               DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE}"
