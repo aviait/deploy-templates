@@ -60,7 +60,7 @@ jobs:
       PACKAGE_MANAGER: ${{ vars.PACKAGE_MANAGER != '' && vars.PACKAGE_MANAGER || 'yarn' }}
       INSTALL_CMD: ${{ vars.INSTALL_CMD != '' && vars.INSTALL_CMD || 'yarn install --immutable' }}
       BUILD_CMD: ${{ vars.BUILD_CMD != '' && vars.BUILD_CMD || 'yarn build' }}
-      VERSION_CMD: ${{ vars.VERSION_CMD != '' && vars.VERSION_CMD || 'node -p "require(\\"./package.json\\").version"' }}
+      VERSION_CMD: ${{ vars.VERSION_CMD != '' && vars.VERSION_CMD || 'node -p "require(\"./package.json\").version"' }}
       CACHE_DEPENDENCY_PATH: ${{ vars.CACHE_DEPENDENCY_PATH }}
 
       # Docker build (VARS com defaults)
