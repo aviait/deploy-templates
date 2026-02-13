@@ -310,6 +310,8 @@ jobs:
 
           IMAGE_REF="${REGISTRY}/${IMAGE_NAMESPACE}/${DOCKER_IMAGE}:${VERSION}"
           REPOSITORY="${REGISTRY}/${IMAGE_NAMESPACE}/${DOCKER_IMAGE}"
+          DEPLOY_HOST_PORT="${HOST_PORT:-}"
+          DEPLOY_PORT="${PORT:-80}"
 
           SERVICE_NAME="${CONTAINER_NAME:-}"
           if [ -z "${SERVICE_NAME}" ]; then
@@ -319,6 +321,19 @@ jobs:
           ENV_B64=""
           if [ -s ".runtime.env" ]; then
             ENV_B64="$(base64 -w0 .runtime.env 2>/dev/null || base64 .runtime.env | tr -d '\n')"
+          fi
+
+          if [ -z "${DEPLOY_HOST_PORT}" ]; then
+            echo "::error::HOST_PORT ausente no ambiente do job."
+            exit 1
+          fi
+          if ! echo "${DEPLOY_HOST_PORT}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::HOST_PORT inválido: ${DEPLOY_HOST_PORT}"
+            exit 1
+          fi
+          if ! echo "${DEPLOY_PORT}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::PORT inválido: ${DEPLOY_PORT}"
+            exit 1
           fi
 
           ssh -o StrictHostKeyChecking=yes \
@@ -335,6 +350,8 @@ jobs:
               REPOSITORY="${REPOSITORY}" \
               KEEP_IMAGES="${IMAGE_RETENTION_COUNT}" \
               SERVICE_NAME="${SERVICE_NAME}" \
+              HOST_PORT="${DEPLOY_HOST_PORT}" \
+              PORT="${DEPLOY_PORT}" \
               ENV_B64="${ENV_B64}" \
               REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
               HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
@@ -355,12 +372,10 @@ jobs:
               exit 1
             fi
 
-            HOST_PORT="$(grep -E '^[[:space:]]*HOST_PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
-            PORT="$(grep -E '^[[:space:]]*PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
-            [ -z "${PORT}" ] && PORT="80"
+            [ -z "${PORT:-}" ] && PORT="80"
 
-            if [ -z "${HOST_PORT}" ]; then
-              echo "HOST_PORT ausente (vars do GitHub)."
+            if [ -z "${HOST_PORT:-}" ]; then
+              echo "HOST_PORT ausente no ambiente remoto (env do SSH)."
               exit 1
             fi
             if ! echo "${HOST_PORT}" | grep -Eq '^[0-9]+$'; then
