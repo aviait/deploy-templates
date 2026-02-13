@@ -58,26 +58,7 @@ on:
       DOCKER_IMAGE:
         required: true
         type: string
-
       CONTAINER_NAME:
-        required: false
-        type: string
-        default: ""
-
-      DOCKER_USERNAME:
-        required: false
-        type: string
-        default: ""
-      DOCKER_PASSWORD:
-        required: false
-        type: string
-        default: ""
-
-      DOCKER_RUN_ENVS:
-        required: false
-        type: string
-        default: ""
-      DOCKER_RUN_ENVS_FILE:
         required: false
         type: string
         default: ""
@@ -132,9 +113,9 @@ on:
       PEM_KEY:
         required: true
       DOCKER_USERNAME:
-        required: false
+        required: true
       DOCKER_PASSWORD:
-        required: false
+        required: true
 
 jobs:
   deploy:
@@ -160,10 +141,10 @@ jobs:
       image_ref: ${{ steps.image_metadata.outputs.image_ref }}
 
     env:
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_USERNAME || inputs.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD != '' && secrets.DOCKER_PASSWORD || inputs.DOCKER_PASSWORD }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_USERNAME || inputs.DOCKER_USERNAME) }}
+      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || secrets.DOCKER_USERNAME }}
 
     steps:
       - name: 🛒 Checkout código
@@ -204,7 +185,7 @@ jobs:
           fi
 
           if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
-            echo "::error::Informe DOCKER_USERNAME/DOCKER_PASSWORD via secrets ou inputs."
+            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD precisam estar em secrets."
             exit 1
           fi
 
@@ -218,15 +199,66 @@ jobs:
             exit 1
           fi
 
-          # DOCKER_RUN_ENVS e DOCKER_RUN_ENVS_FILE são opcionais (não valida aqui)
-
       - name: 🛠️ Instalar dependências
         run: ${{ inputs.INSTALL_CMD }}
 
       - name: 🏗️ Build do projeto
         run: ${{ inputs.BUILD_CMD }}
 
-      - name: 🔐 known_hosts (sem quebrar com porta vazia)
+      # VARS: entra tudo (com ou sem ENV_)
+      # SECRETS: entra só ENV_*
+      # No container: ENV_FOO vira FOO
+      - name: 🧾 Gerar .env do container (vars: tudo | secrets: só ENV_*)
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+import json, re
+
+vars_obj = json.loads(r'''${{ toJSON(vars) }}''') if r'''${{ toJSON(vars) }}'''.strip() else {}
+secrets_obj = json.loads(r'''${{ toJSON(secrets) }}''') if r'''${{ toJSON(secrets) }}'''.strip() else {}
+
+out = {}
+
+def normalize_key(k: str) -> str:
+  return k[4:] if k.startswith("ENV_") else k
+
+# 1) Vars: entra tudo
+for k, v in vars_obj.items():
+  if v is None:
+    continue
+  key = normalize_key(k)
+  if not key:
+    continue
+  out[key] = str(v)
+
+# 2) Secrets: só ENV_* (sobrescreve vars)
+for k, v in secrets_obj.items():
+  if not k.startswith("ENV_"):
+    continue
+  if v is None:
+    continue
+  key = k[4:]
+  if not key:
+    continue
+  out[key] = str(v)
+
+# Mantém só nomes válidos de env var
+safe = {}
+for k, v in out.items():
+  if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', k):
+    safe[k] = v
+
+lines = [f"{k}={safe[k]}" for k in sorted(safe.keys())]
+content = "\n".join(lines).strip() + ("\n" if lines else "")
+
+with open(".runtime.env", "w", encoding="utf-8") as f:
+  f.write(content)
+PY
+
+          chmod 600 .runtime.env
+
+      - name: 🔐 known_hosts (porta não quebra)
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -286,7 +318,7 @@ jobs:
       - name: 🏗️ Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Docker login
+      - name: 🐳 Docker login (registry)
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -329,19 +361,17 @@ jobs:
           KEEP_IMAGES="${{ inputs.IMAGE_RETENTION_COUNT }}"
           REMOTE_DOCKER_LOGIN="${{ inputs.REMOTE_DOCKER_LOGIN }}"
 
-          # ENVS opcionais
-          DOCKER_ENV_MODE="inline"
-          DOCKER_RUN_ENVS_B64="$(printf '%s' "${{ inputs.DOCKER_RUN_ENVS }}" | base64 | tr -d '\n')"
-          DOCKER_RUN_ENVS_FILE_B64=""
-
-          if [ -n "${{ inputs.DOCKER_RUN_ENVS_FILE }}" ]; then
-            DOCKER_ENV_MODE="file"
-            DOCKER_RUN_ENVS_FILE_B64="$(printf '%s\n' "${{ inputs.DOCKER_RUN_ENVS_FILE }}" | base64 | tr -d '\n')"
-          fi
-
           HEALTHCHECK_URL="${{ inputs.HEALTHCHECK_URL }}"
           HEALTHCHECK_RETRIES="${{ inputs.HEALTHCHECK_RETRIES }}"
           HEALTHCHECK_DELAY="${{ inputs.HEALTHCHECK_DELAY }}"
+
+          DOCKER_ENV_MODE="inline"
+          DOCKER_RUN_ENVS_FILE_B64=""
+
+          if [ -s ".runtime.env" ]; then
+            DOCKER_ENV_MODE="file"
+            DOCKER_RUN_ENVS_FILE_B64="$(base64 -w0 .runtime.env 2>/dev/null || base64 .runtime.env | tr -d '\n')"
+          fi
 
           ssh -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
@@ -358,7 +388,6 @@ jobs:
               KEEP_IMAGES="${KEEP_IMAGES}" \
               SERVICE_NAME="${SERVICE_NAME}" \
               DOCKER_ENV_MODE="${DOCKER_ENV_MODE}" \
-              DOCKER_RUN_ENVS_B64="${DOCKER_RUN_ENVS_B64}" \
               DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
               REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
               HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
@@ -367,12 +396,7 @@ jobs:
               bash -s << 'EOF'
             set -euo pipefail
 
-            DOCKER_RUN_ENVS=""
-            if [ -n "${DOCKER_RUN_ENVS_B64}" ]; then
-              DOCKER_RUN_ENVS="$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d)"
-            fi
-
-            DOCKER_ENV_OPTS="${DOCKER_RUN_ENVS}"
+            DOCKER_ENV_OPTS=""
             TMP_ENV_FILE=""
 
             cleanup_tmp_env_file() {
@@ -382,10 +406,10 @@ jobs:
             }
             trap cleanup_tmp_env_file EXIT
 
-            if [ "${DOCKER_ENV_MODE}" = "file" ]; then
+            if [ "${DOCKER_ENV_MODE}" = "file" ] && [ -n "${DOCKER_RUN_ENVS_FILE_B64}" ]; then
               TMP_ENV_FILE="$(mktemp)"
               printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
-              DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE} ${DOCKER_ENV_OPTS}"
+              DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE}"
             fi
 
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
