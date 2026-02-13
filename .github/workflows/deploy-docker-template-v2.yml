@@ -45,7 +45,6 @@ jobs:
       SSH_USER: ${{ vars.SSH_USER }}
       SSH_HOST: ${{ vars.SSH_HOST }}
       SSH_REMOTE_PORT: ${{ vars.SSH_REMOTE_PORT != '' && vars.SSH_REMOTE_PORT || '22' }}
-      SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
 
       # App/container (VARS)
       DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
@@ -154,11 +153,13 @@ jobs:
           const out = {};
           const src = {};
           const norm = (k) => k.startsWith('ENV_') ? k.slice(4) : k;
+          const ignored = new Set(['SSH_KNOWN_HOSTS']);
 
           for (const [k, v] of Object.entries(vars)) {
             if (v == null) continue;
             const kk = norm(k);
             if (!kk) continue;
+            if (ignored.has(kk)) continue;
             out[kk] = String(v);
             src[kk] = 'var(' + k + ')';
           }
@@ -167,6 +168,7 @@ jobs:
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
             if (!kk) continue;
+            if (ignored.has(kk)) continue;
             out[kk] = String(v);
             src[kk] = 'secret(' + k + ')';
           }
@@ -200,11 +202,13 @@ jobs:
 
           const out = {};
           const norm = (k) => k.startsWith('ENV_') ? k.slice(4) : k;
+          const ignored = new Set(['SSH_KNOWN_HOSTS']);
 
           for (const [k, v] of Object.entries(vars)) {
             if (v == null) continue;
             const kk = norm(k);
             if (!kk) continue;
+            if (ignored.has(kk)) continue;
             out[kk] = String(v);
           }
 
@@ -212,14 +216,26 @@ jobs:
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
             if (!kk) continue;
+            if (ignored.has(kk)) continue;
             out[kk] = String(v);
           }
 
           if (!('PORT' in out) || String(out.PORT).trim() === '') out.PORT = '80';
 
           const safe = {};
+          const skipped = [];
           for (const [k, v] of Object.entries(out)) {
-            if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) safe[k] = v;
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+            // docker --env-file rejeita valores com byte NUL e quebra em valores multilinha.
+            if (/[\u0000\r\n]/.test(v)) {
+              skipped.push(k);
+              continue;
+            }
+            safe[k] = v;
+          }
+
+          if (skipped.length) {
+            console.log('Ignoradas no .runtime.env (valor inválido para --env-file): ' + skipped.sort().join(', '));
           }
 
           const content = Object.keys(safe).sort().map(k => k + '=' + safe[k]).join('\n');
@@ -258,10 +274,6 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
-          if [ -n "${SSH_KNOWN_HOSTS:-}" ]; then
-            printf '%s\n' "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
-          fi
 
           ssh-keyscan -T 10 -H -p "${SSH_REMOTE_PORT}" "${SSH_HOST}" >> ~/.ssh/known_hosts
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
