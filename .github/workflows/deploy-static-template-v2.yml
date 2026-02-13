@@ -1,4 +1,4 @@
-name: Deploy Docker Project Template v2
+name: Deploy Static Project Template
 
 on:
   workflow_call:
@@ -9,144 +9,87 @@ on:
       PROJECT_NAME:
         required: true
         type: string
-
       NODE_VERSION:
         required: false
         type: string
         default: "20"
-
-      VERSION_CMD:
-        required: false
-        type: string
-        default: "node -p \"require('./package.json').version\""
-
       PACKAGE_MANAGER:
         required: false
         type: string
         default: "yarn"
-
       INSTALL_CMD:
         required: false
         type: string
         default: "yarn install --immutable"
-
       BUILD_CMD:
         required: false
         type: string
         default: "yarn build"
-
       CACHE_DEPENDENCY_PATH:
         required: false
         type: string
         default: ""
-
+      BUILD_DIR:
+        required: false
+        type: string
+        default: "build"
+      REMOTE_DIR:
+        required: true
+        type: string
+      REMOTE_OWNER:
+        required: false
+        type: string
+        default: "__AUTO__"
       SSH_USER:
         required: true
         type: string
       SSH_HOST:
         required: true
         type: string
-      SSH_REMOTE_PORT:
-        required: false
-        type: number
-        default: 22
       SSH_KNOWN_HOSTS:
         required: false
         type: string
         default: ""
-
-      DOCKER_IMAGE:
-        required: true
-        type: string
-      CONTAINER_NAME:
-        required: false
-        type: string
-        default: ""
-
-      DOCKER_PLATFORM:
-        required: false
-        type: string
-        default: linux/amd64
-      DOCKER_BUILD_ARGS:
-        required: false
-        type: string
-        default: ""
-
-      REGISTRY:
-        required: false
-        type: string
-        default: docker.io
-      IMAGE_NAMESPACE:
-        required: false
-        type: string
-        default: ""
-
-      IMAGE_RETENTION_COUNT:
+      SSH_REMOTE_PORT:
         required: false
         type: number
-        default: 5
-
-      REMOTE_DOCKER_LOGIN:
+        default: 22
+      RSYNC_EXCLUDES:
+        required: false
+        type: string
+        default: ""
+      UPLOAD_ARTIFACT:
         required: false
         type: boolean
-        default: true
-
-      HEALTHCHECK_URL:
+        default: false
+      ARTIFACT_NAME:
         required: false
         type: string
-        default: ""
-      HEALTHCHECK_RETRIES:
-        required: false
-        type: number
-        default: 12
-      HEALTHCHECK_DELAY:
-        required: false
-        type: number
-        default: 5
-
-      PRUNE_RUNNER:
-        required: false
-        type: boolean
-        default: true
-
+        default: "static-build"
     secrets:
       PEM_KEY:
         required: true
 
 jobs:
   deploy:
-    name: "🚀 Deploy Docker Project ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})"
+    name: 🚀 Deploy Static Project ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     concurrency:
-      group: deploy-docker-${{ inputs.PROJECT_NAME }}-${{ inputs.ENVIRONMENT }}
+      group: deploy-static-${{ inputs.PROJECT_NAME }}-${{ inputs.ENVIRONMENT }}
       cancel-in-progress: true
-
     permissions:
       contents: read
-
     environment: ${{ inputs.ENVIRONMENT }}
-
     defaults:
       run:
         shell: bash
 
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      image_ref: ${{ steps.image_metadata.outputs.image_ref }}
-
-    env:
-      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ vars.DOCKER_PASSWORD }}
-      REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || vars.DOCKER_USERNAME }}
-
     steps:
-      - name: "🛒 Checkout código"
+      - name: 🛒 Checkout código
         uses: actions/checkout@v6
 
-      - name: "🧰 Setup Node (cache customizado)"
+      - name: 🧰 Configurar Node (cache customizado)
         if: ${{ inputs.CACHE_DEPENDENCY_PATH != '' }}
         uses: actions/setup-node@v6
         with:
@@ -154,324 +97,104 @@ jobs:
           cache: ${{ inputs.PACKAGE_MANAGER }}
           cache-dependency-path: ${{ inputs.CACHE_DEPENDENCY_PATH }}
 
-      - name: "🧰 Setup Node"
+      - name: 🧰 Configurar Node
         if: ${{ inputs.CACHE_DEPENDENCY_PATH == '' }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.NODE_VERSION }}
           cache: ${{ inputs.PACKAGE_MANAGER }}
 
-      - name: "✅ Validar inputs essenciais"
+      - name: ✅ Validar inputs do template
         run: |
-          set -euo pipefail
-
           if ! [[ "${{ inputs.PACKAGE_MANAGER }}" =~ ^(npm|yarn|pnpm)$ ]]; then
-            echo "::error::PACKAGE_MANAGER deve ser: npm, yarn ou pnpm."
+            echo "::error::PACKAGE_MANAGER deve ser um destes valores: npm, yarn, pnpm."
             exit 1
           fi
-
-          if [ -z "${{ inputs.VERSION_CMD }}" ]; then
-            echo "::error::VERSION_CMD não pode ser vazio."
-            exit 1
-          fi
-
           if [ -z "${{ inputs.INSTALL_CMD }}" ] || [ -z "${{ inputs.BUILD_CMD }}" ]; then
             echo "::error::INSTALL_CMD e BUILD_CMD não podem ser vazios."
             exit 1
           fi
 
-          if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
-            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD precisam estar em vars."
-            exit 1
-          fi
-
-          if [ -z "${IMAGE_NAMESPACE}" ]; then
-            echo "::error::IMAGE_NAMESPACE ficou vazio. Informe IMAGE_NAMESPACE ou DOCKER_USERNAME."
-            exit 1
-          fi
-
-          if ! [[ "${{ inputs.IMAGE_RETENTION_COUNT }}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::IMAGE_RETENTION_COUNT deve ser inteiro > 0."
-            exit 1
-          fi
-
-      - name: "🔎 Debug: variáveis/secrets considerados (mascarados)"
-        env:
-          VARS_JSON: ${{ toJSON(vars) }}
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-        run: |
-          set -euo pipefail
-          node -e "const vars=JSON.parse(process.env.VARS_JSON||'{}'); const secrets=JSON.parse(process.env.SECRETS_JSON||'{}'); const norm=k=>k.startsWith('ENV_')?k.slice(4):k; const out={}; const src={}; for(const [k,v] of Object.entries(vars)){ if(v==null) continue; const kk=norm(k); if(!kk) continue; out[kk]=String(v); src[kk]=`var(${k})`; } for(const [k,v] of Object.entries(secrets)){ if(!k.startsWith('ENV_')||v==null) continue; const kk=k.slice(4); if(!kk) continue; out[kk]=String(v); src[kk]=`secret(${k})`; } const mask=(s)=>{ s=String(s??''); if(!s) return '(vazio)'; if(s.length<=4) return '*'.repeat(s.length); return s.slice(0,2)+'***'+s.slice(-2)+` (len ${s.length})`; }; const keys=Object.keys(out).sort(); console.log('--- ENV efetivas que irão para o container ---'); for(const k of keys){ const from=src[k]||'?'; const valMasked = from.startsWith('secret(') ? '*** (secret)' : mask(out[k]); console.log(`${k} = ${valMasked}  <= ${from}`); } console.log('-------------------------------------------'); if(!keys.length){ console.log('(nenhuma env encontrada via vars/secrets)'); }"
-
-      - name: "🧾 Gerar .env do container (vars: tudo | secrets: só ENV_*)"
-        env:
-          VARS_JSON: ${{ toJSON(vars) }}
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-        run: |
-          set -euo pipefail
-          node -e "const fs=require('fs');const vars=JSON.parse(process.env.VARS_JSON||'{}');const secrets=JSON.parse(process.env.SECRETS_JSON||'{}');const out={};const norm=k=>k.startsWith('ENV_')?k.slice(4):k;for(const [k,v] of Object.entries(vars)){if(v!=null){const kk=norm(k);if(kk)out[kk]=String(v);}}for(const [k,v] of Object.entries(secrets)){if(k.startsWith('ENV_')&&v!=null){const kk=k.slice(4);if(kk)out[kk]=String(v);}}const safe={};for(const [k,v] of Object.entries(out)){if(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))safe[k]=v;}const lines=Object.keys(safe).sort().map(k=>k+'='+safe[k]).join('\n');fs.writeFileSync('.runtime.env', lines?lines+'\\n':'');"
-          chmod 600 .runtime.env
-
-      - name: "🛠️ Instalar dependências"
+      - name: 🛠️ Instalar dependências do projeto
         run: ${{ inputs.INSTALL_CMD }}
 
-      - name: "🏗️ Build do projeto"
+      - name: 🏗️ Buildar o projeto
         run: ${{ inputs.BUILD_CMD }}
 
-      - name: "🔐 known_hosts (porta não quebra)"
+      - name: 🔍 Validar pasta de build
         run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
+          if [ ! -d "${{ inputs.BUILD_DIR }}" ]; then
+            echo "::error::Pasta ${{ inputs.BUILD_DIR }} não encontrada."
+            exit 1
+          fi
+          if [ -z "$(ls -A "${{ inputs.BUILD_DIR }}")" ]; then
+            echo "::error::Pasta ${{ inputs.BUILD_DIR }} está vazia."
+            exit 1
+          fi
+          ls -la "${{ inputs.BUILD_DIR }}"
 
+      - name: 🛠️ Instalar rsync e cliente SSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync openssh-client
+
+      - name: 🔐 Registrar host SSH em known_hosts
+        run: |
+          mkdir -p ~/.ssh
           if [ -n "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
             printf '%s\n' "${{ inputs.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           fi
-
-          HOST="${{ inputs.SSH_HOST }}"
-          PORT="${{ inputs.SSH_REMOTE_PORT }}"
-
-          if [ -z "${HOST}" ]; then
-            echo "::error::SSH_HOST está vazio."
-            exit 1
-          fi
-
-          if [ -n "${PORT}" ]; then
-            ssh-keyscan -T 10 -H -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
-          else
-            ssh-keyscan -T 10 -H "${HOST}" >> ~/.ssh/known_hosts
-          fi
-
+          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: "🔑 Chave SSH privada"
+      - name: 🔑 Configurar chave SSH privada
         run: |
-          set -euo pipefail
-          printf '%s\n' "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
           chmod 600 ./deploy-key.pem
 
-      - name: "🔢 Versão do projeto"
-        id: version
+      - name: 🔍 Criar diretório remoto se não existir
         run: |
-          set -euo pipefail
-          VERSION_CMD=$(cat << 'CMD'
-          ${{ inputs.VERSION_CMD }}
-          CMD
-          )
-          VERSION=$(bash -lc "${VERSION_CMD}")
-          if [ -z "${VERSION}" ]; then
-            echo "::error::VERSION_CMD retornou vazio."
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: "🪪 Metadata da imagem"
-        id: image_metadata
-        run: |
-          set -euo pipefail
-          IMAGE_REF="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${VERSION}"
-          echo "IMAGE_REF=${IMAGE_REF}" >> "$GITHUB_ENV"
-          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
-
-      - name: "🏗️ Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-
-      - name: "🐳 Docker login (registry)"
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_PASSWORD }}
-
-      - name: "🐳 Build e Push (cache GHA)"
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.DOCKER_IMAGE }}:latest
-          platforms: ${{ inputs.DOCKER_PLATFORM }}
-          build-args: ${{ inputs.DOCKER_BUILD_ARGS }}
-          cache-from: type=gha,scope=${{ inputs.DOCKER_IMAGE }}
-          cache-to: type=gha,mode=max,scope=${{ inputs.DOCKER_IMAGE }}
-          provenance: true
-          sbom: true
-          labels: |
-            org.opencontainers.image.title=${{ inputs.PROJECT_NAME }}
-            org.opencontainers.image.version=${{ env.VERSION }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=${{ github.repository }}
-            org.opencontainers.image.created=${{ github.run_started_at }}
-
-      - name: "🚀 Atualizar container no servidor"
-        run: |
-          set -euo pipefail
-
-          IMAGE_REF="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
-          REPOSITORY="${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}"
-
-          SERVICE_NAME="${{ inputs.CONTAINER_NAME }}"
-          if [ -z "${SERVICE_NAME}" ]; then
-            SERVICE_NAME="${{ inputs.DOCKER_IMAGE }}"
+          REMOTE_OWNER="${{ inputs.REMOTE_OWNER }}"
+          if [ "${REMOTE_OWNER}" = "__AUTO__" ]; then
+            REMOTE_OWNER="${{ inputs.SSH_USER }}:${{ inputs.SSH_USER }}"
           fi
 
-          KEEP_IMAGES="${{ inputs.IMAGE_RETENTION_COUNT }}"
-          REMOTE_DOCKER_LOGIN="${{ inputs.REMOTE_DOCKER_LOGIN }}"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem \
+            ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} \
+            "sudo mkdir -p '${{ inputs.REMOTE_DIR }}' && if [ -n '${REMOTE_OWNER}' ]; then sudo chown '${REMOTE_OWNER}' '${{ inputs.REMOTE_DIR }}'; fi"
 
-          HEALTHCHECK_URL="${{ inputs.HEALTHCHECK_URL }}"
-          HEALTHCHECK_RETRIES="${{ inputs.HEALTHCHECK_RETRIES }}"
-          HEALTHCHECK_DELAY="${{ inputs.HEALTHCHECK_DELAY }}"
-
-          DOCKER_RUN_ENVS_FILE_B64=""
-          if [ -s ".runtime.env" ]; then
-            DOCKER_RUN_ENVS_FILE_B64="$(base64 -w0 .runtime.env 2>/dev/null || base64 .runtime.env | tr -d '\n')"
+      - name: 🚚 Enviar arquivos estáticos via rsync
+        run: |
+          EXCLUDES=()
+          if [ -n "${{ inputs.RSYNC_EXCLUDES }}" ]; then
+            while IFS= read -r pattern; do
+              [ -z "$pattern" ] && continue
+              EXCLUDES+=("--exclude=$pattern")
+            done <<< "${{ inputs.RSYNC_EXCLUDES }}"
           fi
+          rsync -avz --delete --progress --stats "${EXCLUDES[@]}" "${{ inputs.BUILD_DIR }}/" \
+            -e "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem" \
+            ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }}:"${{ inputs.REMOTE_DIR }}"
 
-          ssh -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              -o ConnectTimeout=10 \
-              -p "${{ inputs.SSH_REMOTE_PORT }}" \
-              -i ./deploy-key.pem \
-              "${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }}" \
-              env \
-              DOCKER_USERNAME="${DOCKER_USERNAME}" \
-              DOCKER_PASSWORD="${DOCKER_PASSWORD}" \
-              REGISTRY="${REGISTRY}" \
-              IMAGE_REF="${IMAGE_REF}" \
-              REPOSITORY="${REPOSITORY}" \
-              KEEP_IMAGES="${KEEP_IMAGES}" \
-              SERVICE_NAME="${SERVICE_NAME}" \
-              DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
-              REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
-              HEALTHCHECK_URL="${HEALTHCHECK_URL}" \
-              HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES}" \
-              HEALTHCHECK_DELAY="${HEALTHCHECK_DELAY}" \
-              bash -s << 'EOF'
-            set -euo pipefail
-
-            DOCKER_ENV_OPTS=""
-            PORT_OPT=""
-            TMP_ENV_FILE=""
-
-            cleanup_tmp_env_file() {
-              if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
-                rm -f "${TMP_ENV_FILE}"
-              fi
-            }
-            trap cleanup_tmp_env_file EXIT
-
-            if [ -n "${DOCKER_RUN_ENVS_FILE_B64}" ]; then
-              TMP_ENV_FILE="$(mktemp)"
-              printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
-              DOCKER_ENV_OPTS="--env-file ${TMP_ENV_FILE}"
-
-              # PORT vem de vars e está no env-file como PORT=xxxx
-              PORT_HOST="$(grep -E '^[[:space:]]*PORT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
-              if [ -n "${PORT_HOST}" ]; then
-                if ! echo "${PORT_HOST}" | grep -Eq '^[0-9]+$'; then
-                  echo "PORT inválido no env-file: '${PORT_HOST}'"
-                  exit 1
-                fi
-                PORT_OPT="-p ${PORT_HOST}:80"
-              fi
-            fi
-
-            PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
-
-            if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
-              echo "${DOCKER_PASSWORD}" | docker login "${REGISTRY}" -u "${DOCKER_USERNAME}" --password-stdin
-            fi
-
-            docker pull "${IMAGE_REF}"
-
-            docker stop "${SERVICE_NAME}" || true
-            docker rm "${SERVICE_NAME}" || true
-
-            if ! docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-              ${PORT_OPT} \
-              ${DOCKER_ENV_OPTS} \
-              "${IMAGE_REF}"; then
-              echo "Falha ao subir nova versão; tentando rollback..."
-              if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-                  ${PORT_OPT} \
-                  ${DOCKER_ENV_OPTS} \
-                  "${PREVIOUS_IMAGE_ID}" || true
-              fi
-              exit 1
-            fi
-
-            sleep 5
-            if ! docker ps --filter "name=${SERVICE_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
-              echo "Container não está em execução após deploy; rollback."
-              docker stop "${SERVICE_NAME}" || true
-              docker rm "${SERVICE_NAME}" || true
-              if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-                  ${PORT_OPT} \
-                  ${DOCKER_ENV_OPTS} \
-                  "${PREVIOUS_IMAGE_ID}" || true
-              fi
-              exit 1
-            fi
-
-            if [ -n "${HEALTHCHECK_URL}" ]; then
-              if command -v curl >/dev/null 2>&1; then
-                attempt=1
-                success=0
-                while [ $attempt -le "${HEALTHCHECK_RETRIES}" ]; do
-                  if curl -fsSL --max-time 5 "${HEALTHCHECK_URL}"; then
-                    success=1
-                    break
-                  fi
-                  echo "Healthcheck falhou (tentativa ${attempt}/${HEALTHCHECK_RETRIES}); aguardando ${HEALTHCHECK_DELAY}s"
-                  attempt=$((attempt+1))
-                  sleep "${HEALTHCHECK_DELAY}"
-                done
-
-                if [ $success -ne 1 ]; then
-                  echo "Healthcheck não passou; rollback."
-                  docker stop "${SERVICE_NAME}" || true
-                  docker rm "${SERVICE_NAME}" || true
-                  if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                    docker run -d --restart unless-stopped --name "${SERVICE_NAME}" \
-                      ${PORT_OPT} \
-                      ${DOCKER_ENV_OPTS} \
-                      "${PREVIOUS_IMAGE_ID}" || true
-                  fi
-                  exit 1
-                fi
-              else
-                echo "curl não encontrado; pulando healthcheck."
-              fi
-            fi
-
-            OLD_IMAGE_IDS="$(docker image ls "${REPOSITORY}" --format '{{.CreatedAt}} {{.ID}}' | sort -r | awk "NR>${KEEP_IMAGES}{print \$2}")"
-            if [ -n "${OLD_IMAGE_IDS}" ]; then
-              echo "${OLD_IMAGE_IDS}" | xargs -r docker image rm -f || true
-            fi
-            docker image prune -f >/dev/null 2>&1 || true
-          EOF
-
-      - name: "🧹 Remover chave privada"
+      - name: 🧹 Apagar chave privada
         if: always()
         run: rm -f ./deploy-key.pem
 
-      - name: "🧹 Limpar runner"
-        if: ${{ always() && inputs.PRUNE_RUNNER }}
-        run: docker system prune -af --volumes || true
+      - name: 📦 Publicar artefato (opcional)
+        if: ${{ inputs.UPLOAD_ARTIFACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.ARTIFACT_NAME }}
+          path: ${{ inputs.BUILD_DIR }}
 
-      - name: "📝 Resumo"
+      - name: 📝 Resumo do deploy
         if: always()
         run: |
           {
-            echo "## Deploy Docker"
+            echo "## Deploy Static"
             echo "- Projeto: ${{ inputs.PROJECT_NAME }}"
             echo "- Ambiente: ${{ inputs.ENVIRONMENT }}"
-            echo "- Imagem: ${REGISTRY}/${IMAGE_NAMESPACE}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
-            echo "- Plataforma: ${{ inputs.DOCKER_PLATFORM }}"
-            echo "- Imagens retidas: ${{ inputs.IMAGE_RETENTION_COUNT }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "- Diretório build: ${{ inputs.BUILD_DIR }}"
+            echo "- Destino remoto: ${{ inputs.REMOTE_DIR }}"
+          } >> $GITHUB_STEP_SUMMARY
