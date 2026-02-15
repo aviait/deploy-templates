@@ -41,6 +41,7 @@ Workflow: `v2-web.yml`
 | `WEB_BUILD_CMD` | `npm run build` | Comando de build de producao. |
 | `WEB_BUILD_OUTPUT_DIR` | `dist` | Pasta do output que vira artifact e deploy. |
 | `WEB_ARTIFACT_NAME` | `web-build` | Nome do artifact de build publicado no Actions. |
+| `WEB_DNS` | vazio | DNS principal da aplicação web (ex.: `backoffice.aviait.com.br`) usado para resolver `/var/www/<DNS_NAME>` e smoke URL padrão. |
 
 ### Variaveis de environment (deploy)
 | Variavel | Obrigatoria | Default | O que faz |
@@ -50,10 +51,10 @@ Workflow: `v2-web.yml`
 | `SSH_REMOTE_PORT` | nao | `22` | Porta SSH remota. |
 | `SSH_KNOWN_HOSTS` | condicional | - | Conteudo de known_hosts para pinning de host key. |
 | `REQUIRE_SSH_KNOWN_HOSTS` | nao | `false` | Quando `true`, exige `SSH_KNOWN_HOSTS` e nao usa `ssh-keyscan` automatico. |
-| `REMOTE_DIR` | nao | `/var/www/dominio` | Diretorio remoto onde o build sera sincronizado. |
+| `DNS_NAME` | sim | vazio | DNS principal do ambiente (ex.: `backoffice.aviait.com.br`); o deploy publica sempre em `/var/www/<DNS_NAME>`. |
 | `REMOTE_OWNER` | nao | `__AUTO__` | Dono aplicado no diretorio remoto (`user:group`); `__AUTO__` tenta usar o usuario remoto. |
 | `RSYNC_EXCLUDES` | nao | vazio | Exclusoes adicionais no `rsync` (lista separada por linha). |
-| `SMOKE_URL` | nao | vazio | URL para smoke check apos deploy. |
+| `SMOKE_URL` | nao | `https://<DNS_NAME>` quando DNS configurado | URL para smoke check apos deploy. |
 | `SMOKE_RETRIES` | nao | `12` | Tentativas de smoke check. |
 | `SMOKE_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de smoke check. |
 

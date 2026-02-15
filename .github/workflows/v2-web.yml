@@ -86,10 +86,14 @@ on:
         required: false
         type: boolean
         default: false
+      dns_name:
+        required: false
+        type: string
+        default: ""
       remote_dir:
         required: false
         type: string
-        default: "/var/www/dominio"
+        default: ""
       remote_owner:
         required: false
         type: string
@@ -349,6 +353,7 @@ jobs:
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
           IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
           IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_DNS_NAME: ${{ inputs.dns_name }}
           IN_REMOTE_DIR: ${{ inputs.remote_dir }}
           IN_REMOTE_OWNER: ${{ inputs.remote_owner }}
           IN_RSYNC_EXCLUDES: ${{ inputs.rsync_excludes }}
@@ -402,17 +407,28 @@ jobs:
             return fallback;
           };
 
+          const normalizeDns = (value) => {
+            const raw = pickString(value);
+            if (!raw) return '';
+            return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+          };
+
+          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, vars.DNS_NAME, vars.WEB_DNS));
+          const remoteDirFromDns = dnsName ? `/var/www/${dnsName}` : '';
+          const defaultSmokeUrl = dnsName ? `https://${dnsName}` : '';
+
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
+            dns_name: dnsName,
             ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
             ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            remote_dir: pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR, '/var/www/dominio'),
+            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR),
             remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
             rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
-            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL, defaultSmokeUrl),
             smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
             smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
           };
@@ -425,9 +441,16 @@ jobs:
       - name: Validate deploy config
         run: |
           set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.dns_name }}" ] || { echo "::error::dns_name ausente (input dns_name ou var DNS_NAME/WEB_DNS)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.remote_dir }}" ] || { echo "::error::remote_dir ausente (input ou var REMOTE_DIR)"; exit 1; }
+          if [ -n "${{ steps.resolve.outputs.dns_name }}" ] && ! printf '%s' "${{ steps.resolve.outputs.dns_name }}" | grep -Eq '^[A-Za-z0-9.-]+$'; then
+            echo "::error::dns_name inválido. Use somente letras, números, ponto e hífen."
+            exit 1
+          fi
+          EXPECTED_REMOTE_DIR="/var/www/${{ steps.resolve.outputs.dns_name }}"
+          [ "${{ steps.resolve.outputs.remote_dir }}" = "${EXPECTED_REMOTE_DIR}" ] || { echo "::error::remote_dir deve ser ${EXPECTED_REMOTE_DIR}"; exit 1; }
           [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
 
           if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
@@ -442,8 +465,10 @@ jobs:
             echo "## pre-deploy-config summary"
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
+            echo "- dns: ${{ steps.resolve.outputs.dns_name != '' && steps.resolve.outputs.dns_name || 'not-configured' }}"
             echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
             echo "- remote dir configured: ${{ steps.resolve.outputs.remote_dir != '' && 'yes' || 'no' }}"
+            echo "- resolved remote dir: ${{ steps.resolve.outputs.remote_dir }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
@@ -469,6 +494,7 @@ jobs:
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
           IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
           IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_DNS_NAME: ${{ inputs.dns_name }}
           IN_REMOTE_DIR: ${{ inputs.remote_dir }}
           IN_REMOTE_OWNER: ${{ inputs.remote_owner }}
           IN_RSYNC_EXCLUDES: ${{ inputs.rsync_excludes }}
@@ -522,17 +548,28 @@ jobs:
             return fallback;
           };
 
+          const normalizeDns = (value) => {
+            const raw = pickString(value);
+            if (!raw) return '';
+            return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+          };
+
+          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, vars.DNS_NAME, vars.WEB_DNS));
+          const remoteDirFromDns = dnsName ? `/var/www/${dnsName}` : '';
+          const defaultSmokeUrl = dnsName ? `https://${dnsName}` : '';
+
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
+            dns_name: dnsName,
             ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
             ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            remote_dir: pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR, '/var/www/dominio'),
+            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR),
             remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
             rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
-            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL, defaultSmokeUrl),
             smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
             smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
           };
@@ -545,9 +582,16 @@ jobs:
       - name: Validate deploy config
         run: |
           set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.dns_name }}" ] || { echo "::error::dns_name ausente (input dns_name ou var DNS_NAME/WEB_DNS)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.remote_dir }}" ] || { echo "::error::remote_dir ausente (input ou var REMOTE_DIR)"; exit 1; }
+          if [ -n "${{ steps.resolve.outputs.dns_name }}" ] && ! printf '%s' "${{ steps.resolve.outputs.dns_name }}" | grep -Eq '^[A-Za-z0-9.-]+$'; then
+            echo "::error::dns_name inválido. Use somente letras, números, ponto e hífen."
+            exit 1
+          fi
+          EXPECTED_REMOTE_DIR="/var/www/${{ steps.resolve.outputs.dns_name }}"
+          [ "${{ steps.resolve.outputs.remote_dir }}" = "${EXPECTED_REMOTE_DIR}" ] || { echo "::error::remote_dir deve ser ${EXPECTED_REMOTE_DIR}"; exit 1; }
           [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
 
           if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
@@ -642,6 +686,7 @@ jobs:
             echo "## deploy summary"
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
+            echo "- dns: ${{ steps.resolve.outputs.dns_name != '' && steps.resolve.outputs.dns_name || 'not-configured' }}"
             echo "- remote dir: ${{ steps.resolve.outputs.remote_dir }}"
             echo "- ref: ${GITHUB_REF}"
           } >> "$GITHUB_STEP_SUMMARY"

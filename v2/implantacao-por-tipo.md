@@ -35,7 +35,10 @@ Ajustes obrigatórios no caller:
 Vars mínimas por environment:
 - `SSH_USER`: usuário SSH do host web.
 - `SSH_HOST`: host/IP do servidor.
-- `REMOTE_DIR`: diretório de deploy (recomendado `/var/www/dominio`).
+- `DNS_NAME`: domínio da aplicação (ex.: `backoffice.aviait.com.br`).
+
+Diretório remoto final:
+- o deploy publica em `/var/www/<DNS_NAME>`.
 
 Secrets mínimos por environment:
 - `PEM_KEY`: chave SSH privada.
@@ -44,7 +47,7 @@ Comportamento:
 - PR/Push: roda quality + build + security.
 - Push em `development` e `homologation`: deploy para `dev`/`hml`.
 - Produção: caller de produção permite tag `v*` e respeita `PIPELINE_ENABLE_PROD_FROM_BRANCH`.
-- Pós deploy: smoke check via `SMOKE_URL` (quando configurado).
+- Pós deploy: smoke check via `SMOKE_URL` ou automaticamente `https://<DNS_NAME>` quando `SMOKE_URL` não for informado.
 
 ## BFF
 Arquivos callers:

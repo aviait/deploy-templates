@@ -16,7 +16,7 @@ Templates reutilizáveis de CI/CD para GitHub Actions, com foco em `development/
   - `v2/pr-validate.md`
 
 ## Tipos suportados
-- `web`: build estático + deploy SSH/rsync (default `/var/www/dominio`)
+- `web`: build estático + deploy SSH/rsync (diretório remoto derivável por DNS: `/var/www/<DNS_NAME>`)
 - `bff`: build Docker + publish imagem + deploy SSH com `docker run`
 - `worker`: build Docker + publish imagem + deploy SSH com `docker run`
 - `app`: React Native (CI + distribuição QA + release)

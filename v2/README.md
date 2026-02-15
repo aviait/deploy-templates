@@ -26,7 +26,7 @@ Este repositório publica reusable workflows para:
 5. `production` branch só deploya `prd` quando habilitado.
 
 ## Padrão de deploy
-- Web: deploy para diretório remoto (default `/var/www/dominio`) com `rsync --delete` + smoke check.
+- Web: deploy para diretório remoto com `rsync --delete` + smoke check; diretório pode ser derivado de DNS (`/var/www/<DNS_NAME>`).
 - BFF: `docker pull`, `docker stop/rm`, `docker run`, healthcheck opcional e rollback automático.
 - Worker: mesmo padrão do BFF, com startup checks e rollback automático.
 - App: distribuição Firebase e/ou release via Fastlane.

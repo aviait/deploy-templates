@@ -40,6 +40,7 @@ jobs:
       build_cmd: ${{ vars.WEB_BUILD_CMD || 'npm run build' }}
       build_output_dir: ${{ vars.WEB_BUILD_OUTPUT_DIR || 'dist' }}
       artifact_name: ${{ vars.WEB_ARTIFACT_NAME || 'web-build' }}
+      dns_name: ${{ vars.WEB_DNS || vars.DNS_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: false
       deploy_on_tag_only: false
