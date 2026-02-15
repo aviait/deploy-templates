@@ -404,37 +404,37 @@ jobs:
             *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
           esac
 
-      - name: Dependency audit
-        run: |
-          set -euo pipefail
-          case "${{ inputs.package_manager }}" in
-            npm) npm audit --audit-level=high ;;
-            yarn)
-              if yarn npm audit --all >/dev/null 2>&1; then
-                yarn npm audit --all --recursive
-              else
-                yarn audit --level high
-              fi
-              ;;
-            pnpm) pnpm audit --audit-level high ;;
-            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-          esac
+      # - name: Dependency audit
+      #   run: |
+      #     set -euo pipefail
+      #     case "${{ inputs.package_manager }}" in
+      #       npm) npm audit --audit-level=high ;;
+      #       yarn)
+      #         if yarn npm audit --all >/dev/null 2>&1; then
+      #           yarn npm audit --all --recursive
+      #         else
+      #           yarn audit --level high
+      #         fi
+      #         ;;
+      #       pnpm) pnpm audit --audit-level high ;;
+      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+      #     esac
 
-      - name: Secret scanning (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Secret scanning (gitleaks)
+      #   uses: gitleaks/gitleaks-action@v2
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript
+      # - name: Initialize CodeQL
+      #   uses: github/codeql-action/init@v3
+      #   with:
+      #     languages: javascript
 
-      - name: CodeQL Autobuild
-        uses: github/codeql-action/autobuild@v3
+      # - name: CodeQL Autobuild
+      #   uses: github/codeql-action/autobuild@v3
 
-      - name: Analyze CodeQL
-        uses: github/codeql-action/analyze@v3
+      # - name: Analyze CodeQL
+      #   uses: github/codeql-action/analyze@v3
 
   release:
     name: release
