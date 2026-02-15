@@ -77,7 +77,9 @@ Workflow: `v2-bff.yml`
 | `BFF_TYPECHECK_CMD` | `npm run typecheck` | Typecheck da aplicacao. |
 | `BFF_TEST_CMD` | `npm test -- --ci` | Testes automatizados. |
 | `BFF_DOCKERFILE` | `Dockerfile` | Dockerfile usado no build da imagem. |
-| `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Nome do repositorio da imagem (publicada em GHCR). |
+| `BFF_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
+| `BFF_IMAGE_NAMESPACE` | vazio | Namespace quando `BFF_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
+| `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry. Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
 | `BFF_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do container (`docker run`). |
 | `BFF_GITHUB_VARS_PREFIX` | vazio | Injeta apenas vars com esse prefixo (filtro). |
 | `BFF_GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
@@ -111,8 +113,8 @@ Workflow: `v2-bff.yml`
 | Segredo | Obrigatorio | O que faz |
 | --- | --- | --- |
 | `PEM_KEY` | sim (deploy) | Chave SSH para conectar no servidor. |
-| `DEPLOY_REGISTRY_USERNAME` | condicional | Usuario do registry no host remoto (obrigatorio quando `REMOTE_DOCKER_LOGIN=true`). |
-| `DEPLOY_REGISTRY_PASSWORD` | condicional | Senha/token do registry no host remoto. |
+| `DEPLOY_REGISTRY_USERNAME` | condicional | Usuario do registry (usado para `docker login` no runner e/ou no host remoto quando `REMOTE_DOCKER_LOGIN=true`). |
+| `DEPLOY_REGISTRY_PASSWORD` | condicional | Senha/token do registry (Docker Hub: access token; GHCR: PAT com `read:packages`/`write:packages` conforme necessidade). |
 | `DOCKER_RUN_ENVS_FILE` | opcional | Env-file adicional (multiline) enviado para o host e aplicado no container. |
 
 ## Worker
@@ -129,7 +131,9 @@ Workflow: `v2-worker.yml`
 | `WORKER_TYPECHECK_CMD` | `npm run typecheck` | Typecheck da aplicacao. |
 | `WORKER_TEST_CMD` | `npm test -- --ci` | Testes automatizados. |
 | `WORKER_DOCKERFILE` | `Dockerfile` | Dockerfile do worker. |
-| `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Nome do repositorio da imagem no GHCR. |
+| `WORKER_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
+| `WORKER_IMAGE_NAMESPACE` | vazio | Namespace quando `WORKER_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
+| `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry. Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
 | `WORKER_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
 | `WORKER_GITHUB_VARS_PREFIX` | vazio | Filtra injecao de vars por prefixo. |
 | `WORKER_GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
@@ -157,8 +161,8 @@ Workflow: `v2-worker.yml`
 | Segredo | Obrigatorio | O que faz |
 | --- | --- | --- |
 | `PEM_KEY` | sim (deploy) | Chave SSH para deploy remoto. |
-| `DEPLOY_REGISTRY_USERNAME` | condicional | Usuario para `docker login` remoto (quando habilitado). |
-| `DEPLOY_REGISTRY_PASSWORD` | condicional | Senha/token para `docker login` remoto. |
+| `DEPLOY_REGISTRY_USERNAME` | condicional | Usuario do registry (usado para `docker login` no runner e/ou no host remoto quando `REMOTE_DOCKER_LOGIN=true`). |
+| `DEPLOY_REGISTRY_PASSWORD` | condicional | Senha/token do registry (Docker Hub: access token; GHCR: PAT com `read:packages`/`write:packages` conforme necessidade). |
 | `WORKER_RUN_ENVS_FILE` | opcional | Env-file multiline adicional aplicado no worker. |
 
 ## App (React Native)

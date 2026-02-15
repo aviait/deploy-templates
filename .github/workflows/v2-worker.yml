@@ -46,6 +46,14 @@ on:
         required: false
         type: string
         default: "Dockerfile"
+      registry:
+        required: false
+        type: string
+        default: "ghcr.io"
+      image_namespace:
+        required: false
+        type: string
+        default: ""
       image_name:
         required: false
         type: string
@@ -197,6 +205,7 @@ jobs:
       stage_image: ${{ steps.meta.outputs.stage_image }}
       release_image: ${{ steps.meta.outputs.release_image }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
+      registry: ${{ steps.meta.outputs.registry }}
     steps:
       - uses: actions/checkout@v6
 
@@ -204,12 +213,41 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
+          REGISTRY_INPUT="${{ inputs.registry }}"
+          if [ -z "${REGISTRY_INPUT}" ]; then
+            REGISTRY_INPUT="ghcr.io"
+          fi
+          REGISTRY="${REGISTRY_INPUT,,}"
+
           IMAGE_INPUT="${{ inputs.image_name }}"
           if [ -z "${IMAGE_INPUT}" ]; then
-            IMAGE_INPUT="${GITHUB_REPOSITORY}/worker"
+            if [ "${REGISTRY}" = "ghcr.io" ]; then
+              IMAGE_INPUT="${GITHUB_REPOSITORY}/worker"
+            else
+              IMAGE_INPUT="${GITHUB_REPOSITORY}"
+            fi
           fi
 
-          IMAGE="ghcr.io/${IMAGE_INPUT}"
+          IMAGE_PATH="${IMAGE_INPUT}"
+          if ! printf '%s' "${IMAGE_PATH}" | grep -q '/'; then
+            NS_INPUT="${{ inputs.image_namespace }}"
+            if [ -n "${NS_INPUT}" ]; then
+              IMAGE_PATH="${NS_INPUT}/${IMAGE_PATH}"
+            else
+              IMAGE_PATH="${GITHUB_REPOSITORY%%/*}/${IMAGE_PATH}"
+            fi
+          fi
+
+          if [ "${REGISTRY}" = "docker.io" ]; then
+            SLASH_COUNT="$(printf '%s' "${IMAGE_PATH}" | awk -F/ '{print NF-1}')"
+            if [ "${SLASH_COUNT}" -ne 1 ]; then
+              echo "::error::Para Docker Hub (docker.io), a imagem deve ser no formato 'namespace/repo'. Recebido: '${IMAGE_PATH}'."
+              echo "::error::Sugestao: defina image_name como 'namespace/repo' (ex.: 'aviait/tei-worker') e opcionalmente use image_namespace."
+              exit 1
+            fi
+          fi
+
+          IMAGE="${REGISTRY}/${IMAGE_PATH}"
           IMAGE="${IMAGE,,}"
           SHA_TAG="sha-${GITHUB_SHA::12}"
           STAGE_IMAGE="${IMAGE}:${SHA_TAG}"
@@ -227,6 +265,7 @@ jobs:
           fi
 
           {
+            echo "registry=${REGISTRY}"
             echo "stage_image=${STAGE_IMAGE}"
             echo "release_image=${RELEASE_IMAGE}"
             echo "release_tag=${RELEASE_TAG}"
@@ -238,7 +277,22 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Validate registry credentials (non-GHCR)
+        if: ${{ steps.meta.outputs.push_image == 'true' && steps.meta.outputs.registry != 'ghcr.io' && (secrets.DEPLOY_REGISTRY_USERNAME == '' || secrets.DEPLOY_REGISTRY_PASSWORD == '') }}
+        run: |
+          set -euo pipefail
+          echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para publicar imagem quando registry != ghcr.io"
+          exit 1
+
       - uses: docker/login-action@v3
+        if: ${{ steps.meta.outputs.push_image == 'true' && steps.meta.outputs.registry != 'ghcr.io' }}
+        with:
+          registry: ${{ steps.meta.outputs.registry }}
+          username: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+          password: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+
+      - uses: docker/login-action@v3
+        if: ${{ steps.meta.outputs.push_image == 'true' && steps.meta.outputs.registry == 'ghcr.io' }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -363,7 +417,22 @@ jobs:
     outputs:
       release_image: ${{ steps.tag_image.outputs.release_image }}
     steps:
+      - name: Validate registry credentials (non-GHCR)
+        if: ${{ needs.build.outputs.registry != 'ghcr.io' && (secrets.DEPLOY_REGISTRY_USERNAME == '' || secrets.DEPLOY_REGISTRY_PASSWORD == '') }}
+        run: |
+          set -euo pipefail
+          echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para publicar release quando registry != ghcr.io"
+          exit 1
+
       - uses: docker/login-action@v3
+        if: ${{ needs.build.outputs.registry != 'ghcr.io' }}
+        with:
+          registry: ${{ needs.build.outputs.registry }}
+          username: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+          password: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+
+      - uses: docker/login-action@v3
+        if: ${{ needs.build.outputs.registry == 'ghcr.io' }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

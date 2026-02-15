@@ -40,6 +40,8 @@ jobs:
       typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'npm run typecheck' }}
       test_cmd: ${{ vars.WORKER_TEST_CMD || 'npm test -- --ci' }}
       dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
+      registry: ${{ vars.WORKER_REGISTRY || 'ghcr.io' }}
+      image_namespace: ${{ vars.WORKER_IMAGE_NAMESPACE }}
       image_name: ${{ vars.WORKER_IMAGE_NAME || format('{0}/worker', github.repository) }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: false

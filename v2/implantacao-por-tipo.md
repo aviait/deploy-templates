@@ -57,7 +57,9 @@ Arquivos callers:
 
 Ajustes obrigatórios no caller:
 - `paths` e `working_directory`.
-- `image_name`: nome da imagem no GHCR.
+- `registry`: registry de imagem (`ghcr.io` ou `docker.io`).
+- `image_namespace` (opcional): namespace quando `image_name` nao tiver `/` (Docker Hub).
+- `image_name`: caminho do repositorio de imagem sem o host do registry.
 - `dockerfile`: caminho do Dockerfile.
 
 Vars mínimas por environment:
@@ -80,7 +82,7 @@ Secrets opcionais:
 - `DOCKER_RUN_ENVS_FILE` para enviar env-file multiline.
 
 Comportamento:
-- Builda imagem Docker, publica no GHCR e faz deploy remoto via SSH + `docker run`.
+- Builda imagem Docker, publica no registry configurado e faz deploy remoto via SSH + `docker run`.
 - Em falha de startup/healthcheck, executa rollback automático para imagem anterior.
 - Gera resumo completo em `GITHUB_STEP_SUMMARY`.
 
@@ -91,7 +93,8 @@ Arquivos callers:
 - `worker-production.yml`
 
 Ajustes obrigatórios no caller:
-- `paths`, `working_directory`, `dockerfile`, `image_name`.
+- `paths`, `working_directory`, `dockerfile`, `registry`, `image_name`.
+- `image_namespace` (opcional): namespace quando `image_name` nao tiver `/` (Docker Hub).
 - Nome de worker opcional (`WORKER_NAME`); fallback automático para nome do repo.
 
 Vars mínimas por environment:

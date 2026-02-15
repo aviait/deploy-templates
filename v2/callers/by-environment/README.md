@@ -22,8 +22,8 @@ Use `by-environment` quando houver isolamento forte entre `development`, `homolo
 ## Convenção de vars/secrets por environment (sem sufixo)
 Em cada environment (`dev`, `hml`, `prd`), cadastre os mesmos nomes:
 - Web: `SSH_USER`, `SSH_HOST`, `SSH_REMOTE_PORT`, `DNS_NAME`, `PEM_KEY`
-- BFF: `SSH_USER`, `SSH_HOST`, `HOST_PORT`, `PEM_KEY`, `DEPLOY_REGISTRY_USERNAME`, `DEPLOY_REGISTRY_PASSWORD`
-- Worker: `SSH_USER`, `SSH_HOST`, `PEM_KEY`, `DEPLOY_REGISTRY_USERNAME`, `DEPLOY_REGISTRY_PASSWORD`
+- BFF: `SSH_USER`, `SSH_HOST`, `HOST_PORT`, `PEM_KEY`, `DEPLOY_REGISTRY_USERNAME`, `DEPLOY_REGISTRY_PASSWORD`, `BFF_REGISTRY`, `BFF_IMAGE_NAMESPACE`, `BFF_IMAGE_NAME`
+- Worker: `SSH_USER`, `SSH_HOST`, `PEM_KEY`, `DEPLOY_REGISTRY_USERNAME`, `DEPLOY_REGISTRY_PASSWORD`, `WORKER_REGISTRY`, `WORKER_IMAGE_NAMESPACE`, `WORKER_IMAGE_NAME`
 - App: `FIREBASE_TOKEN` e credenciais mobile (`ANDROID_*`, `IOS_*`, `APP_STORE_CONNECT_*`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`)
 
 ## app_name automático
