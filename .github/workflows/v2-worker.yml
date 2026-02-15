@@ -1147,6 +1147,56 @@ jobs:
               read -r -a WORKER_EXTRA_ARGS_ARRAY <<< "${WORKER_EXTRA_ARGS}"
             fi
 
+            env_file_lines=0
+            if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
+              env_file_lines="$(wc -l < "${TMP_ENV_FILE}" | tr -d ' ')"
+            fi
+
+            inline_env_lines=0
+            if [ -n "${WORKER_RUN_ENVS}" ]; then
+              inline_env_lines="$(printf '%s\n' "${WORKER_RUN_ENVS}" | grep -vc '^[[:space:]]*$' || true)"
+            fi
+
+            sanitize_docker_args() {
+              local args=("$@")
+              local out=()
+              local i=0
+              while [ "${i}" -lt "${#args[@]}" ]; do
+                local a="${args[$i]}"
+                case "${a}" in
+                  --env|-e)
+                    local kv="${args[$((i+1))]:-}"
+                    local key="${kv%%=*}"
+                    if [ -z "${kv}" ]; then
+                      out+=("${a}" "***")
+                    elif printf '%s' "${kv}" | grep -q '='; then
+                      out+=("${a}" "${key}=***")
+                    else
+                      out+=("${a}" "${kv}")
+                    fi
+                    i=$((i+2))
+                    ;;
+                  --env-file)
+                    out+=("${a}" "<env-file>")
+                    i=$((i+2))
+                    ;;
+                  *)
+                    out+=("${a}")
+                    i=$((i+1))
+                    ;;
+                esac
+              done
+              printf '%q ' "${out[@]}"
+            }
+
+            echo "docker run plan (sanitized):"
+            echo "- image: ${IMAGE_REF}"
+            echo "- name: ${WORKER_NAME}"
+            echo "- env-file: $([ "${env_file_lines}" -gt 0 ] && echo "yes (lines=${env_file_lines})" || echo "no")"
+            echo "- inline env: $([ "${inline_env_lines}" -gt 0 ] && echo "yes (lines=${inline_env_lines})" || echo "no")"
+            echo "- extra args provided: $([ -n "${WORKER_EXTRA_ARGS}" ] && echo "yes" || echo "no")"
+            echo "docker run (sanitized): docker run $(sanitize_docker_args "${DOCKER_RUN_ARGS[@]}") ${IMAGE_REF} [args]"
+
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${WORKER_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
@@ -1165,6 +1215,10 @@ jobs:
               fi
               exit 1
             fi
+
+            echo "Container status (after docker run):"
+            docker ps -a --filter "name=${WORKER_NAME}" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' || true
+            docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${WORKER_NAME}" 2>/dev/null || true
 
             attempt=1
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
