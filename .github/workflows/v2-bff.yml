@@ -890,8 +890,8 @@ jobs:
         env:
           VARS_JSON: ${{ toJSON(vars) }}
           INJECT_ALL: ${{ steps.resolve.outputs.inject_all_github_vars }}
-          PREFIX: ${{ steps.resolve.outputs.github_vars_prefix }}
           EXCLUDE: ${{ steps.resolve.outputs.github_vars_exclude }}
+          PIPELINE_ENV: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -899,11 +899,26 @@ jobs:
 
           const vars = JSON.parse(process.env.VARS_JSON || '{}');
           const includeAll = String(process.env.INJECT_ALL || '').toLowerCase() === 'true';
-          const prefix = (process.env.PREFIX || '').trim();
           const rawExclude = (process.env.EXCLUDE || '').trim();
           const patterns = rawExclude
             ? rawExclude.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
             : [];
+
+          const resolveEnvSuffix = (v) => {
+            const raw = String(v || '').trim();
+            if (!raw) return '';
+            const upper = raw.toUpperCase();
+            if (['DEV', 'HML', 'PRD'].includes(upper)) return upper;
+            const lower = raw.toLowerCase();
+            if (['dev', 'development'].includes(lower)) return 'DEV';
+            if (['hml', 'homologation', 'stage', 'staging', 'uat'].includes(lower)) return 'HML';
+            if (['prd', 'prod', 'production'].includes(lower)) return 'PRD';
+            return '';
+          };
+
+          const envSuffix = resolveEnvSuffix(process.env.PIPELINE_ENV);
+          const suffixes = ['DEV', 'HML', 'PRD'];
+          const suffixRe = new RegExp(`^(.*)_(${suffixes.join('|')})$`);
 
           const isValidEnvName = (k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
           const matchPattern = (key, pattern) => {
@@ -916,24 +931,82 @@ jobs:
           let lines = [];
           let skippedInvalid = 0;
           let skippedMultiline = 0;
+          let mappedEnvSuffix = 0;
+          let skippedOtherEnvSuffix = 0;
+
+          const addLine = (key, value) => {
+            if (excluded(key)) return;
+            if (!isValidEnvName(key)) {
+              skippedInvalid += 1;
+              return;
+            }
+            if (value === undefined || value === null) return;
+            const str = String(value);
+            if (/[\r\n\0]/.test(str)) {
+              skippedMultiline += 1;
+              return;
+            }
+            lines.push(`${key}=${str}`);
+          };
 
           if (includeAll) {
             const keys = Object.keys(vars).sort();
-            for (const key of keys) {
-              if (prefix && !key.startsWith(prefix)) continue;
-              if (excluded(key)) continue;
-              if (!isValidEnvName(key)) {
-                skippedInvalid += 1;
-                continue;
+
+            // If the environment is known (dev/hml/prd), collapse *_DEV|*_HML|*_PRD into a single key.
+            // Example: S3_BUCKET_DEV -> S3_BUCKET (only for the selected environment).
+            if (envSuffix) {
+              const effective = new Map();
+
+              // Base vars (no suffix) first.
+              for (const key of keys) {
+                if (suffixRe.test(key)) continue;
+                if (excluded(key)) continue;
+                if (!isValidEnvName(key)) {
+                  skippedInvalid += 1;
+                  continue;
+                }
+                const value = vars[key];
+                if (value === undefined || value === null) continue;
+                const str = String(value);
+                if (/[\r\n\0]/.test(str)) {
+                  skippedMultiline += 1;
+                  continue;
+                }
+                effective.set(key, str);
               }
-              const value = vars[key];
-              if (value === undefined || value === null) continue;
-              const str = String(value);
-              if (/[\r\n\0]/.test(str)) {
-                skippedMultiline += 1;
-                continue;
+
+              // Selected env overrides.
+              for (const key of keys) {
+                const m = key.match(suffixRe);
+                if (!m) continue;
+                const baseKey = m[1];
+                const suffix = m[2];
+                if (suffix !== envSuffix) {
+                  skippedOtherEnvSuffix += 1;
+                  continue;
+                }
+                if (excluded(key) || excluded(baseKey)) continue;
+                if (!isValidEnvName(baseKey)) {
+                  skippedInvalid += 1;
+                  continue;
+                }
+                const value = vars[key];
+                if (value === undefined || value === null) continue;
+                const str = String(value);
+                if (/[\r\n\0]/.test(str)) {
+                  skippedMultiline += 1;
+                  continue;
+                }
+                effective.set(baseKey, str);
+                mappedEnvSuffix += 1;
               }
-              lines.push(`${key}=${str}`);
+
+              lines = Array.from(effective.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([k, v]) => `${k}=${v}`);
+            } else {
+              // Unknown environment: keep original keys (including *_DEV|*_HML|*_PRD), but still apply excludes.
+              for (const key of keys) addLine(key, vars[key]);
             }
           }
 
@@ -945,6 +1018,9 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_count=${lines.length}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_invalid=${skippedInvalid}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_multiline=${skippedMultiline}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `env_suffix=${envSuffix}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `mapped_env_suffix=${mappedEnvSuffix}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_other_env_suffix=${skippedOtherEnvSuffix}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_b64=${b64}\n`);
           NODE
 
@@ -1364,6 +1440,7 @@ jobs:
             echo "- healthcheck_url: ${{ steps.resolve.outputs.healthcheck_url != '' && steps.resolve.outputs.healthcheck_url || '(disabled)' }}"
             echo "- startup_check: retries=${{ steps.resolve.outputs.startup_check_retries }}, delay=${{ steps.resolve.outputs.startup_check_delay_seconds }}s"
             echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
+            echo "- env suffix collapse: ${{ steps.auto_vars.outputs.env_suffix != '' && steps.auto_vars.outputs.env_suffix || '(unknown)' }} (mapped=${{ steps.auto_vars.outputs.mapped_env_suffix }}, skipped_other=${{ steps.auto_vars.outputs.skipped_other_env_suffix }})"
             echo "- auto vars skipped (invalid name): ${{ steps.auto_vars.outputs.skipped_invalid }}"
             echo "- auto vars skipped (multiline/null): ${{ steps.auto_vars.outputs.skipped_multiline }}"
           } >> "$GITHUB_STEP_SUMMARY"
