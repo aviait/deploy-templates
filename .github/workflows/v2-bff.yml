@@ -1369,9 +1369,16 @@ jobs:
             docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${SERVICE_NAME}" 2>/dev/null || true
 
             attempt=1
+            stable_running_checks=0
+            required_stable_running_checks=2
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
               if docker ps --filter "name=${SERVICE_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
-                break
+                stable_running_checks=$((stable_running_checks+1))
+                if [ "${stable_running_checks}" -ge "${required_stable_running_checks}" ]; then
+                  break
+                fi
+              else
+                stable_running_checks=0
               fi
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
                 echo "Container não ficou running; rollback."
@@ -1392,6 +1399,11 @@ jobs:
               attempt=1
               ok=0
               while [ "${attempt}" -le "${HEALTHCHECK_RETRIES}" ]; do
+                container_state="$(docker inspect -f '{{.State.Status}}' "${SERVICE_NAME}" 2>/dev/null || true)"
+                if [ "${container_state}" != "running" ]; then
+                  echo "Container saiu de running durante healthcheck (state=${container_state:-desconhecido})."
+                  break
+                fi
                 if curl -fsSL --max-time 5 "${HEALTHCHECK_URL}" >/dev/null; then
                   ok=1
                   break
