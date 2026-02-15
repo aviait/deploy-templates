@@ -159,6 +159,8 @@ on:
         type: string
         default: ""
     secrets:
+      CHECKOUT_TOKEN:
+        required: false
       PEM_KEY:
         required: false
       DEPLOY_REGISTRY_USERNAME:
@@ -181,6 +183,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -232,6 +236,8 @@ jobs:
       registry: ${{ steps.meta.outputs.registry }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Docker metadata
         id: meta
@@ -429,6 +435,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}

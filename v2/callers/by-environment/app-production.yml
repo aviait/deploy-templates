@@ -58,6 +58,7 @@ jobs:
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
     secrets:
+      CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

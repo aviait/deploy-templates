@@ -11,6 +11,12 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 - `vars`: parametros de configuracao (host, portas, comandos, toggles).
 - `secrets`: dados sensiveis (chaves SSH, senha de registry, certificados mobile).
 
+## Segredos comuns (cross-template)
+| Segredo | Obrigatorio | Onde usa | O que faz |
+| --- | --- | --- | --- |
+| `CHECKOUT_TOKEN` | nao | `v2-web.yml`, `v2-bff.yml`, `v2-worker.yml`, `v2-app.yml` | Token alternativo para `actions/checkout` quando o `GITHUB_TOKEN` nao consegue clonar o repo (ex.: orchestrator repo rodando pipeline para outro repo privado, submodules privados, restricoes de permissao). Recomendado: Fine-grained PAT com acesso apenas ao(s) repo(s) necessario(s) e permissao `Contents: Read`. |
+| `RELEASE_PAT` | condicional | `v2/callers/examples/auto-tag-production.yml` | PAT usado apenas no workflow de exemplo de **auto-tag** para criar e dar push em tags `vX.Y.Z`. Necessario porque tags criadas com `GITHUB_TOKEN` geralmente **nao disparam** outros workflows de `push`/`tags` (proteção anti-recursao). Recomendado: Fine-grained PAT com `Contents: Read and write` no repo e, se sua org usa SSO, autorizar o token no SSO. |
+
 ## Variaveis comuns (usadas pelos callers)
 | Variavel | Tipo | Default | O que faz |
 | --- | --- | --- | --- |

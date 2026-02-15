@@ -123,6 +123,8 @@ on:
         type: boolean
         default: false
     secrets:
+      CHECKOUT_TOKEN:
+        required: false
       FIREBASE_TOKEN:
         required: false
       ANDROID_KEYSTORE_BASE64:
@@ -163,6 +165,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -211,6 +215,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -338,6 +344,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -681,6 +689,8 @@ jobs:
       - name: Checkout for Fastlane release
         if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
         uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Ruby
         if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}

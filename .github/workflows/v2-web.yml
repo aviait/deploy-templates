@@ -115,6 +115,8 @@ on:
         type: number
         default: 0
     secrets:
+      CHECKOUT_TOKEN:
+        required: false
       PEM_KEY:
         required: false
 
@@ -131,6 +133,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -185,6 +189,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -248,6 +254,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
