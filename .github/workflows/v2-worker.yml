@@ -105,7 +105,7 @@ on:
       startup_check_delay_seconds:
         required: false
         type: number
-        default: 0
+        default: -1
       prune_runner:
         required: false
         type: boolean
@@ -670,6 +670,10 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${{ secrets.WORKER_RUN_ENVS_FILE }}" ] && [ -z "${{ steps.resolve.outputs.worker_run_envs }}" ]; then
+            echo "::warning::worker_run_envs vazio e WORKER_RUN_ENVS_FILE não configurado. Secrets não são injetados automaticamente; use WORKER_RUN_ENVS_FILE para variáveis sensíveis."
+          fi
+
       - name: Publish pre-deploy summary
         if: always()
         run: |
@@ -1103,7 +1107,6 @@ jobs:
             WORKER_RUN_ENVS="$(printf '%s' "${WORKER_RUN_ENVS_B64}" | base64 -d || true)"
             TMP_ENV_FILE=""
             DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${WORKER_NAME}")
-            WORKER_RUN_ENVS_ARRAY=()
             WORKER_EXTRA_ARGS_ARRAY=()
 
             cleanup_tmp_env_file() {
@@ -1120,8 +1123,24 @@ jobs:
             fi
 
             if [ -n "${WORKER_RUN_ENVS}" ]; then
-              read -r -a WORKER_RUN_ENVS_ARRAY <<< "${WORKER_RUN_ENVS}"
-              DOCKER_RUN_ARGS+=("${WORKER_RUN_ENVS_ARRAY[@]}")
+              # Format supported:
+              # - One per line: KEY=VALUE (recommended)
+              # - Backward compatible: "-e KEY=VALUE" or "--env KEY=VALUE"
+              while IFS= read -r line; do
+                line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                [ -z "${line}" ] && continue
+                case "${line}" in
+                  \#*) continue ;;
+                esac
+
+                if printf '%s' "${line}" | grep -Eq '^(--env|-e)[[:space:]]+'; then
+                  flag="${line%% *}"
+                  val="${line#* }"
+                  DOCKER_RUN_ARGS+=("${flag}" "${val}")
+                else
+                  DOCKER_RUN_ARGS+=(--env "${line}")
+                fi
+              done <<< "${WORKER_RUN_ENVS}"
             fi
 
             if [ -n "${WORKER_EXTRA_ARGS}" ]; then
@@ -1140,6 +1159,7 @@ jobs:
             docker rm "${WORKER_NAME}" || true
 
             if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}" "${WORKER_EXTRA_ARGS_ARRAY[@]}"; then
+              docker logs --tail 200 "${WORKER_NAME}" 2>/dev/null || true
               if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
                 docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
               fi
@@ -1152,6 +1172,8 @@ jobs:
                 break
               fi
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
+                docker ps -a --filter "name=${WORKER_NAME}" || true
+                docker logs --tail 200 "${WORKER_NAME}" 2>/dev/null || true
                 docker stop "${WORKER_NAME}" || true
                 docker rm "${WORKER_NAME}" || true
                 if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
@@ -1186,6 +1208,9 @@ jobs:
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ref: \`${{ github.ref }}\`"
+            echo "- worker_run_envs provided: ${{ steps.resolve.outputs.worker_run_envs != '' && 'yes' || 'no' }}"
+            echo "- worker_run_envs_file secret provided: ${{ secrets.WORKER_RUN_ENVS_FILE != '' && 'yes' || 'no' }}"
+            echo "- startup_check: retries=${{ steps.resolve.outputs.startup_check_retries }}, delay=${{ steps.resolve.outputs.startup_check_delay_seconds }}s"
             echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
             echo "- auto vars skipped (invalid name): ${{ steps.auto_vars.outputs.skipped_invalid }}"
             echo "- auto vars skipped (multiline/null): ${{ steps.auto_vars.outputs.skipped_multiline }}"

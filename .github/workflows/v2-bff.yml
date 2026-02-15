@@ -113,7 +113,7 @@ on:
       healthcheck_delay_seconds:
         required: false
         type: number
-        default: 0
+        default: -1
       remote_docker_login:
         required: false
         type: boolean
@@ -129,7 +129,7 @@ on:
       startup_check_delay_seconds:
         required: false
         type: number
-        default: 0
+        default: -1
       prune_runner:
         required: false
         type: boolean
@@ -710,6 +710,10 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${{ secrets.DOCKER_RUN_ENVS_FILE }}" ] && [ -z "${{ steps.resolve.outputs.docker_run_envs }}" ]; then
+            echo "::warning::docker_run_envs vazio e DOCKER_RUN_ENVS_FILE não configurado. O container só receberá GitHub vars (se inject_all_github_vars=true). Secrets não são injetados automaticamente; use DOCKER_RUN_ENVS_FILE para JWT_SECRET/EMAIL_* etc."
+          fi
+
       - name: Publish pre-deploy summary
         if: always()
         run: |
@@ -1175,7 +1179,6 @@ jobs:
 
             RUN_ENVS="$(printf '%s' "${RUN_ENVS_B64}" | base64 -d || true)"
 
-            RUN_ENVS_ARRAY=()
             EXTRA_ARGS_ARRAY=()
             DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${SERVICE_NAME}" -p "${HOST_PORT}:${CONTAINER_PORT}")
             MIGRATION_ARGS=(--rm)
@@ -1188,9 +1191,26 @@ jobs:
             fi
 
             if [ -n "${RUN_ENVS}" ]; then
-              read -r -a RUN_ENVS_ARRAY <<< "${RUN_ENVS}"
-              DOCKER_RUN_ARGS+=("${RUN_ENVS_ARRAY[@]}")
-              MIGRATION_ARGS+=("${RUN_ENVS_ARRAY[@]}")
+              # Format supported:
+              # - One per line: KEY=VALUE (recommended)
+              # - Backward compatible: "-e KEY=VALUE" or "--env KEY=VALUE"
+              while IFS= read -r line; do
+                line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                [ -z "${line}" ] && continue
+                case "${line}" in
+                  \#*) continue ;;
+                esac
+
+                if printf '%s' "${line}" | grep -Eq '^(--env|-e)[[:space:]]+'; then
+                  flag="${line%% *}"
+                  val="${line#* }"
+                  DOCKER_RUN_ARGS+=("${flag}" "${val}")
+                  MIGRATION_ARGS+=("${flag}" "${val}")
+                else
+                  DOCKER_RUN_ARGS+=(--env "${line}")
+                  MIGRATION_ARGS+=(--env "${line}")
+                fi
+              done <<< "${RUN_ENVS}"
             fi
 
             if [ -n "${EXTRA_ARGS}" ]; then
@@ -1215,6 +1235,7 @@ jobs:
 
             if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}"; then
               echo "Falha ao subir nova versão; rollback."
+              docker logs --tail 200 "${SERVICE_NAME}" 2>/dev/null || true
               if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
                 docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" || true
               fi
@@ -1228,6 +1249,8 @@ jobs:
               fi
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
                 echo "Container não ficou running; rollback."
+                docker ps -a --filter "name=${SERVICE_NAME}" || true
+                docker logs --tail 200 "${SERVICE_NAME}" 2>/dev/null || true
                 docker stop "${SERVICE_NAME}" || true
                 docker rm "${SERVICE_NAME}" || true
                 if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
@@ -1252,6 +1275,8 @@ jobs:
               done
               if [ "${ok}" -ne 1 ]; then
                 echo "Healthcheck falhou; rollback."
+                docker ps -a --filter "name=${SERVICE_NAME}" || true
+                docker logs --tail 200 "${SERVICE_NAME}" 2>/dev/null || true
                 docker stop "${SERVICE_NAME}" || true
                 docker rm "${SERVICE_NAME}" || true
                 if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
@@ -1284,6 +1309,10 @@ jobs:
             echo "- app: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ref: \`${{ github.ref }}\`"
+            echo "- docker_run_envs provided: ${{ steps.resolve.outputs.docker_run_envs != '' && 'yes' || 'no' }}"
+            echo "- docker_run_envs_file secret provided: ${{ secrets.DOCKER_RUN_ENVS_FILE != '' && 'yes' || 'no' }}"
+            echo "- healthcheck_url: ${{ steps.resolve.outputs.healthcheck_url != '' && steps.resolve.outputs.healthcheck_url || '(disabled)' }}"
+            echo "- startup_check: retries=${{ steps.resolve.outputs.startup_check_retries }}, delay=${{ steps.resolve.outputs.startup_check_delay_seconds }}s"
             echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
             echo "- auto vars skipped (invalid name): ${{ steps.auto_vars.outputs.skipped_invalid }}"
             echo "- auto vars skipped (multiline/null): ${{ steps.auto_vars.outputs.skipped_multiline }}"
