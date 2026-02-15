@@ -213,6 +213,11 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
+          REF="${{ github.ref }}"
+          EVENT_NAME="${{ github.event_name }}"
+          REPO="${{ github.repository }}"
+          SHA="${{ github.sha }}"
+
           REGISTRY_INPUT="${{ inputs.registry }}"
           if [ -z "${REGISTRY_INPUT}" ]; then
             REGISTRY_INPUT="ghcr.io"
@@ -222,10 +227,42 @@ jobs:
           IMAGE_INPUT="${{ inputs.image_name }}"
           if [ -z "${IMAGE_INPUT}" ]; then
             if [ "${REGISTRY}" = "ghcr.io" ]; then
-              IMAGE_INPUT="${GITHUB_REPOSITORY}/worker"
+              IMAGE_INPUT="${REPO}/worker"
             else
-              IMAGE_INPUT="${GITHUB_REPOSITORY}"
+              IMAGE_INPUT="${REPO}"
             fi
+          fi
+
+          # Fail early on common misconfigurations that lead to "invalid reference format".
+          if [ -z "${REGISTRY}" ]; then
+            echo "::error::registry vazio"
+            exit 1
+          fi
+          if printf '%s' "${REGISTRY}" | grep -Eq '://|/|[[:space:]]'; then
+            echo "::error::registry invalido: '${REGISTRY}'. Use apenas o host (ex.: ghcr.io, docker.io, registry.exemplo.com:5000), sem 'https://' e sem '/'."
+            exit 1
+          fi
+
+          if printf '%s' "${IMAGE_INPUT}" | grep -Eq '://|[[:space:]]'; then
+            echo "::error::image_name invalido: '${IMAGE_INPUT}'. Nao use URL e nao use espacos."
+            exit 1
+          fi
+          if printf '%s' "${IMAGE_INPUT}" | grep -Eq '[@:]'; then
+            echo "::error::image_name nao deve conter tag/digest (':' ou '@'). Informe somente o repositorio (ex.: 'aviait/tei-worker' ou '${REPO}/worker')."
+            exit 1
+          fi
+          FIRST_SEGMENT="${IMAGE_INPUT%%/*}"
+          if [ "${FIRST_SEGMENT}" != "${IMAGE_INPUT}" ]; then
+            if printf '%s' "${FIRST_SEGMENT}" | grep -Eq '[\\.:]' || [ "${FIRST_SEGMENT}" = "localhost" ]; then
+              echo "::error::image_name nao deve incluir o registry host (ex.: 'ghcr.io/...'). Use o input registry para isso."
+              exit 1
+            fi
+          fi
+
+          NS_FROM_INPUT="${{ inputs.image_namespace }}"
+          if [ -n "${NS_FROM_INPUT}" ] && printf '%s' "${NS_FROM_INPUT}" | grep -Eq '[:/@]|[[:space:]]'; then
+            echo "::error::image_namespace invalido: '${NS_FROM_INPUT}'. Use apenas o namespace (ex.: aviait), sem '/', ':', '@' e sem espacos."
+            exit 1
           fi
 
           IMAGE_PATH="${IMAGE_INPUT}"
@@ -234,7 +271,7 @@ jobs:
             if [ -n "${NS_INPUT}" ]; then
               IMAGE_PATH="${NS_INPUT}/${IMAGE_PATH}"
             else
-              IMAGE_PATH="${GITHUB_REPOSITORY%%/*}/${IMAGE_PATH}"
+              IMAGE_PATH="${REPO%%/*}/${IMAGE_PATH}"
             fi
           fi
 
@@ -249,18 +286,37 @@ jobs:
 
           IMAGE="${REGISTRY}/${IMAGE_PATH}"
           IMAGE="${IMAGE,,}"
-          SHA_TAG="sha-${GITHUB_SHA::12}"
+          SHA_TAG="sha-${SHA::12}"
           STAGE_IMAGE="${IMAGE}:${SHA_TAG}"
           RELEASE_TAG=""
           RELEASE_IMAGE=""
           PUSH_IMAGE="true"
 
-          if [[ "${GITHUB_REF}" == refs/pull/* ]]; then
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
             PUSH_IMAGE="false"
           fi
 
-          if [[ "${GITHUB_REF}" == refs/tags/${{ inputs.semver_prefix }}* ]]; then
-            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "${REF}" == refs/tags/${{ inputs.semver_prefix }}* ]]; then
+            GIT_TAG="${REF#refs/tags/}"
+            PKG_JSON="${{ inputs.working_directory }}/package.json"
+
+            PACKAGE_VERSION=""
+            if [ -f "${PKG_JSON}" ]; then
+              PACKAGE_VERSION="$(python3 -c "import json,sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('version','')).strip())" "${PKG_JSON}" 2>/dev/null || true)"
+            fi
+
+            if [ -n "${PACKAGE_VERSION}" ]; then
+              PREFIX="${{ inputs.semver_prefix }}"
+              if [ "${GIT_TAG}" != "${PREFIX}${PACKAGE_VERSION}" ] && [ "${GIT_TAG}" != "${PACKAGE_VERSION}" ]; then
+                echo "::error::Tag '${GIT_TAG}' nao corresponde a versao do package.json ('${PACKAGE_VERSION}'). Esperado '${PREFIX}${PACKAGE_VERSION}'."
+                exit 1
+              fi
+              RELEASE_TAG="${PACKAGE_VERSION}"
+            else
+              echo "::warning::Nao foi possivel ler package.json version em '${PKG_JSON}'. Usando tag git como release_tag."
+              RELEASE_TAG="${GIT_TAG}"
+            fi
+
             RELEASE_IMAGE="${IMAGE}:${RELEASE_TAG}"
           fi
 
@@ -321,7 +377,7 @@ jobs:
             "stage_image": "${{ steps.meta.outputs.stage_image }}",
             "release_image": "${{ steps.meta.outputs.release_image }}",
             "release_tag": "${{ steps.meta.outputs.release_tag }}",
-            "git_sha": "${GITHUB_SHA}",
+            "git_sha": "${{ github.sha }}",
             "environment": "${{ inputs.environment }}"
           }
           JSON
@@ -461,11 +517,19 @@ jobs:
           fi
 
           IMAGE_REPO="${RELEASE_IMAGE%:*}"
+          GIT_TAG="${{ github.ref_name }}"
+          GIT_RELEASE_IMAGE="${IMAGE_REPO}:${GIT_TAG}"
           docker pull "${STAGE_IMAGE}"
           docker tag "${STAGE_IMAGE}" "${RELEASE_IMAGE}"
           docker tag "${STAGE_IMAGE}" "${IMAGE_REPO}:latest"
+          if [ "${GIT_RELEASE_IMAGE}" != "${RELEASE_IMAGE}" ]; then
+            docker tag "${STAGE_IMAGE}" "${GIT_RELEASE_IMAGE}"
+          fi
           docker push "${RELEASE_IMAGE}"
           docker push "${IMAGE_REPO}:latest"
+          if [ "${GIT_RELEASE_IMAGE}" != "${RELEASE_IMAGE}" ]; then
+            docker push "${GIT_RELEASE_IMAGE}"
+          fi
           echo "release_image=${RELEASE_IMAGE}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
@@ -846,6 +910,16 @@ jobs:
             TARGET_IMAGE="${RELEASE_IMAGE}"
           fi
 
+          if [ -z "${TARGET_IMAGE}" ]; then
+            echo "::error::TARGET_IMAGE vazio (verifique build/release outputs)"
+            exit 1
+          fi
+          if printf '%s' "${TARGET_IMAGE}" | grep -Eq '://|[[:space:]]'; then
+            echo "::error::TARGET_IMAGE invalida: '${TARGET_IMAGE}'"
+            exit 1
+          fi
+          echo "TARGET_IMAGE=${TARGET_IMAGE}"
+
           WORKER_RUN_ENVS_B64="$(printf '%s' "${WORKER_RUN_ENVS}" | base64 | tr -d '\n')"
 
           TMP_ENV_FILE="$(mktemp)"
@@ -866,6 +940,8 @@ jobs:
 
           REPOSITORY="${TARGET_IMAGE%:*}"
           REGISTRY="${TARGET_IMAGE%%/*}"
+          echo "REGISTRY=${REGISTRY}"
+          echo "REPOSITORY=${REPOSITORY}"
 
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=10 -p "${SSH_PORT}" -i ./deploy-key.pem \
             "${SSH_USER}@${SSH_HOST}" \
@@ -885,6 +961,18 @@ jobs:
             IMAGE_RETENTION_COUNT="${IMAGE_RETENTION_COUNT}" \
             bash -s << 'EOF'
             set -euo pipefail
+
+            if [ -z "${IMAGE_REF}" ]; then
+              echo "IMAGE_REF vazio"
+              exit 1
+            fi
+            if printf '%s' "${IMAGE_REF}" | grep -Eq '://|[[:space:]]'; then
+              echo "IMAGE_REF invalida: '${IMAGE_REF}'"
+              exit 1
+            fi
+            echo "IMAGE_REF=${IMAGE_REF}"
+            echo "REGISTRY=${REGISTRY}"
+            echo "WORKER_NAME=${WORKER_NAME}"
 
             WORKER_RUN_ENVS="$(printf '%s' "${WORKER_RUN_ENVS_B64}" | base64 -d || true)"
             TMP_ENV_FILE=""
@@ -971,7 +1059,7 @@ jobs:
             echo "## deploy summary"
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
-            echo "- ref: ${GITHUB_REF}"
+            echo "- ref: \`${{ github.ref }}\`"
             echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
             echo "- auto vars skipped (invalid name): ${{ steps.auto_vars.outputs.skipped_invalid }}"
             echo "- auto vars skipped (multiline/null): ${{ steps.auto_vars.outputs.skipped_multiline }}"
@@ -996,8 +1084,8 @@ jobs:
           {
             echo "## v2-worker summary"
             echo ""
-            echo "- ref: \`${GITHUB_REF}\`"
-            echo "- event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- ref: \`${{ github.ref }}\`"
+            echo "- event: \`${{ github.event_name }}\`"
             echo "- environment: \`${{ inputs.environment }}\`"
             echo ""
             echo "| Job | Result |"

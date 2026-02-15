@@ -79,10 +79,13 @@ Workflow: `v2-bff.yml`
 | `BFF_DOCKERFILE` | `Dockerfile` | Dockerfile usado no build da imagem. |
 | `BFF_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `BFF_IMAGE_NAMESPACE` | vazio | Namespace quando `BFF_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
-| `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry. Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
+| `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
 | `BFF_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do container (`docker run`). |
 | `BFF_GITHUB_VARS_PREFIX` | vazio | Injeta apenas vars com esse prefixo (filtro). |
 | `BFF_GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
+
+Notas de release (tags):
+- Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
 
 ### Variaveis de environment (deploy/runtime)
 | Variavel | Obrigatoria | Default | O que faz |
@@ -133,10 +136,13 @@ Workflow: `v2-worker.yml`
 | `WORKER_DOCKERFILE` | `Dockerfile` | Dockerfile do worker. |
 | `WORKER_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `WORKER_IMAGE_NAMESPACE` | vazio | Namespace quando `WORKER_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
-| `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry. Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
+| `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
 | `WORKER_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
 | `WORKER_GITHUB_VARS_PREFIX` | vazio | Filtra injecao de vars por prefixo. |
 | `WORKER_GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
+
+Notas de release (tags):
+- Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
 
 ### Variaveis de environment (deploy/runtime)
 | Variavel | Obrigatoria | Default | O que faz |

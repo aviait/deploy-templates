@@ -83,6 +83,7 @@ Secrets opcionais:
 
 Comportamento:
 - Builda imagem Docker, publica no registry configurado e faz deploy remoto via SSH + `docker run`.
+- Em tags `vX.Y.Z`: a tag principal da imagem de release usa a versao do `package.json` (validada contra a tag git) quando disponivel, e tambem publica a tag `vX.Y.Z` e `latest`.
 - Em falha de startup/healthcheck, executa rollback automático para imagem anterior.
 - Gera resumo completo em `GITHUB_STEP_SUMMARY`.
 
@@ -114,6 +115,7 @@ Vars recomendadas:
 
 Comportamento:
 - Deploy remoto via SSH com `docker stop/rm` e `docker run` do novo worker.
+- Em tags `vX.Y.Z`: a tag principal da imagem de release usa a versao do `package.json` (validada contra a tag git) quando disponivel, e tambem publica a tag `vX.Y.Z` e `latest`.
 - Evita duplicidade permanente mantendo um único container com o mesmo nome.
 - Em falha de subida, rollback automático.
 
