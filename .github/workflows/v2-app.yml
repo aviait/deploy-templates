@@ -1,0 +1,821 @@
+name: v2 - App (React Native) CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: false
+        type: string
+        default: ""
+      environment:
+        required: true
+        type: string
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      build_android:
+        required: false
+        type: boolean
+        default: true
+      build_ios:
+        required: false
+        type: boolean
+        default: true
+      android_working_directory:
+        required: false
+        type: string
+        default: "android"
+      ios_working_directory:
+        required: false
+        type: string
+        default: "ios"
+      android_build_cmd:
+        required: false
+        type: string
+        default: "./gradlew :app:bundleRelease"
+      ios_build_cmd:
+        required: false
+        type: string
+        default: "xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -archivePath build/Runner.xcarchive archive"
+      ios_export_cmd:
+        required: false
+        type: string
+        default: "xcodebuild -exportArchive -archivePath build/Runner.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist"
+      android_artifact_path:
+        required: false
+        type: string
+        default: "app/build/outputs/bundle/release/*.aab"
+      ios_artifact_path:
+        required: false
+        type: string
+        default: "build/**/*.ipa"
+      firebase_app_id_android:
+        required: false
+        type: string
+        default: ""
+      firebase_app_id_ios:
+        required: false
+        type: string
+        default: ""
+      firebase_groups:
+        required: false
+        type: string
+        default: "qa"
+      deploy_via_fastlane:
+        required: false
+        type: boolean
+        default: false
+      fastlane_working_directory:
+        required: false
+        type: string
+        default: "."
+      bundle_install_cmd:
+        required: false
+        type: string
+        default: "bundle install"
+      fastlane_android_lane:
+        required: false
+        type: string
+        default: "android release"
+      fastlane_ios_lane:
+        required: false
+        type: string
+        default: "ios release"
+      semver_prefix:
+        required: false
+        type: string
+        default: "v"
+      enable_release:
+        required: false
+        type: boolean
+        default: true
+      deploy_on_tag_only:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      FIREBASE_TOKEN:
+        required: false
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
+      IOS_P12_BASE64:
+        required: false
+      IOS_P12_PASSWORD:
+        required: false
+      IOS_MOBILEPROVISION_BASE64:
+        required: false
+      IOS_KEYCHAIN_PASSWORD:
+        required: false
+      APP_STORE_CONNECT_KEY_ID:
+        required: false
+      APP_STORE_CONNECT_ISSUER_ID:
+        required: false
+      APP_STORE_CONNECT_PRIVATE_KEY_BASE64:
+        required: false
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON:
+        required: false
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - run: ${{ inputs.lint_cmd }}
+      - run: ${{ inputs.typecheck_cmd }}
+      - run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    needs: quality
+    runs-on: macos-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Setup Java
+        if: ${{ inputs.build_android }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Ruby
+        if: ${{ inputs.build_ios }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install JS dependencies
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.working_directory }}"
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Configure Android signing
+        if: ${{ inputs.build_android && secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/signing/release.keystore"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/signing/release.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure iOS signing
+        if: ${{ inputs.build_ios && secrets.IOS_P12_BASE64 != '' && secrets.IOS_MOBILEPROVISION_BASE64 != '' }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "${{ secrets.IOS_KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "${{ secrets.IOS_KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          printf '%s' "${{ secrets.IOS_P12_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "${{ secrets.IOS_P12_PASSWORD }}" -T /usr/bin/codesign
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          printf '%s' "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision"
+
+      - name: Build Android
+        if: ${{ inputs.build_android }}
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.android_working_directory }}
+        run: |
+          set -euo pipefail
+          ${{ inputs.android_build_cmd }}
+
+      - name: Build iOS archive
+        if: ${{ inputs.build_ios }}
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.ios_working_directory }}
+        run: |
+          set -euo pipefail
+          ${{ inputs.ios_build_cmd }}
+
+      - name: Export iOS artifact
+        if: ${{ inputs.build_ios }}
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.ios_working_directory }}
+        run: |
+          set -euo pipefail
+          ${{ inputs.ios_export_cmd }}
+
+      - name: Upload Android artifact
+        if: ${{ inputs.build_android }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-android-artifact
+          path: ${{ inputs.working_directory }}/${{ inputs.android_working_directory }}/${{ inputs.android_artifact_path }}
+          if-no-files-found: error
+
+      - name: Upload iOS artifact
+        if: ${{ inputs.build_ios }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-ios-artifact
+          path: ${{ inputs.working_directory }}/${{ inputs.ios_working_directory }}/${{ inputs.ios_artifact_path }}
+          if-no-files-found: error
+
+  security:
+    name: security
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ inputs.enable_release && startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download Android artifact
+        if: ${{ inputs.build_android }}
+        uses: actions/download-artifact@v4
+        with:
+          name: app-android-artifact
+          path: ${{ runner.temp }}/android
+
+      - name: Download iOS artifact
+        if: ${{ inputs.build_ios }}
+        uses: actions/download-artifact@v4
+        with:
+          name: app-ios-artifact
+          path: ${{ runner.temp }}/ios
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            ${{ runner.temp }}/android/**
+            ${{ runner.temp }}/ios/**
+
+  pre_deploy_config:
+    name: pre-deploy-config
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name == 'pull_request' }}
+    needs: [build, security, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_FIREBASE_APP_ID_ANDROID: ${{ inputs.firebase_app_id_android }}
+          IN_FIREBASE_APP_ID_IOS: ${{ inputs.firebase_app_id_ios }}
+          IN_FIREBASE_GROUPS: ${{ inputs.firebase_groups }}
+          IN_DEPLOY_VIA_FASTLANE: ${{ inputs.deploy_via_fastlane }}
+          IN_FASTLANE_WORKING_DIRECTORY: ${{ inputs.fastlane_working_directory }}
+          IN_BUNDLE_INSTALL_CMD: ${{ inputs.bundle_install_cmd }}
+          IN_FASTLANE_ANDROID_LANE: ${{ inputs.fastlane_android_lane }}
+          IN_FASTLANE_IOS_LANE: ${{ inputs.fastlane_ios_lane }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            firebase_app_id_android: pickString(process.env.IN_FIREBASE_APP_ID_ANDROID, vars.FIREBASE_APP_ID_ANDROID),
+            firebase_app_id_ios: pickString(process.env.IN_FIREBASE_APP_ID_IOS, vars.FIREBASE_APP_ID_IOS),
+            firebase_groups: pickString(process.env.IN_FIREBASE_GROUPS, vars.FIREBASE_GROUPS, 'qa'),
+            deploy_via_fastlane: toBool(process.env.IN_DEPLOY_VIA_FASTLANE, false) || toBool(vars.DEPLOY_VIA_FASTLANE, false),
+            fastlane_working_directory: pickString(process.env.IN_FASTLANE_WORKING_DIRECTORY, vars.FASTLANE_WORKING_DIRECTORY, '.'),
+            bundle_install_cmd: pickString(process.env.IN_BUNDLE_INSTALL_CMD, vars.BUNDLE_INSTALL_CMD, 'bundle install'),
+            fastlane_android_lane: pickString(process.env.IN_FASTLANE_ANDROID_LANE, vars.FASTLANE_ANDROID_LANE, 'android release'),
+            fastlane_ios_lane: pickString(process.env.IN_FASTLANE_IOS_LANE, vars.FASTLANE_IOS_LANE, 'ios release'),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          NEED_FIREBASE="false"
+          if [ "${{ inputs.build_android }}" = "true" ] && [ -n "${{ steps.resolve.outputs.firebase_app_id_android }}" ]; then
+            NEED_FIREBASE="true"
+          fi
+          if [ "${{ inputs.build_ios }}" = "true" ] && [ -n "${{ steps.resolve.outputs.firebase_app_id_ios }}" ]; then
+            NEED_FIREBASE="true"
+          fi
+
+          if [ "${NEED_FIREBASE}" = "true" ] && [ -z "${{ secrets.FIREBASE_TOKEN }}" ]; then
+            echo "::error::FIREBASE_TOKEN é obrigatório para distribuição Firebase"
+            exit 1
+          fi
+
+          if [ "${{ steps.resolve.outputs.deploy_via_fastlane }}" = "true" ]; then
+            if [ "${{ inputs.build_android }}" = "true" ] && [ -z "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" ]; then
+              echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON é obrigatório para fastlane android"
+              exit 1
+            fi
+            if [ "${{ inputs.build_ios }}" = "true" ] && { [ -z "${{ secrets.APP_STORE_CONNECT_KEY_ID }}" ] || [ -z "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" ] || [ -z "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}" ]; }; then
+              echo "::error::Credenciais App Store Connect incompletas para fastlane iOS"
+              exit 1
+            fi
+          fi
+
+      - name: Publish pre-deploy summary
+        if: always()
+        run: |
+          {
+            echo "## pre-deploy-config summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- firebase android app id: ${{ steps.resolve.outputs.firebase_app_id_android != '' && 'configured' || 'not-configured' }}"
+            echo "- firebase ios app id: ${{ steps.resolve.outputs.firebase_app_id_ios != '' && 'configured' || 'not-configured' }}"
+            echo "- fastlane release: ${{ steps.resolve.outputs.deploy_via_fastlane }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: deploy
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name != 'pull_request' && (!inputs.deploy_on_tag_only || startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix))) }}
+    needs: [build, security, release]
+    runs-on: macos-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: app-${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_FIREBASE_APP_ID_ANDROID: ${{ inputs.firebase_app_id_android }}
+          IN_FIREBASE_APP_ID_IOS: ${{ inputs.firebase_app_id_ios }}
+          IN_FIREBASE_GROUPS: ${{ inputs.firebase_groups }}
+          IN_DEPLOY_VIA_FASTLANE: ${{ inputs.deploy_via_fastlane }}
+          IN_FASTLANE_WORKING_DIRECTORY: ${{ inputs.fastlane_working_directory }}
+          IN_BUNDLE_INSTALL_CMD: ${{ inputs.bundle_install_cmd }}
+          IN_FASTLANE_ANDROID_LANE: ${{ inputs.fastlane_android_lane }}
+          IN_FASTLANE_IOS_LANE: ${{ inputs.fastlane_ios_lane }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            firebase_app_id_android: pickString(process.env.IN_FIREBASE_APP_ID_ANDROID, vars.FIREBASE_APP_ID_ANDROID),
+            firebase_app_id_ios: pickString(process.env.IN_FIREBASE_APP_ID_IOS, vars.FIREBASE_APP_ID_IOS),
+            firebase_groups: pickString(process.env.IN_FIREBASE_GROUPS, vars.FIREBASE_GROUPS, 'qa'),
+            deploy_via_fastlane: toBool(process.env.IN_DEPLOY_VIA_FASTLANE, false) || toBool(vars.DEPLOY_VIA_FASTLANE, false),
+            fastlane_working_directory: pickString(process.env.IN_FASTLANE_WORKING_DIRECTORY, vars.FASTLANE_WORKING_DIRECTORY, '.'),
+            bundle_install_cmd: pickString(process.env.IN_BUNDLE_INSTALL_CMD, vars.BUNDLE_INSTALL_CMD, 'bundle install'),
+            fastlane_android_lane: pickString(process.env.IN_FASTLANE_ANDROID_LANE, vars.FASTLANE_ANDROID_LANE, 'android release'),
+            fastlane_ios_lane: pickString(process.env.IN_FASTLANE_IOS_LANE, vars.FASTLANE_IOS_LANE, 'ios release'),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          NEED_FIREBASE="false"
+          if [ "${{ inputs.build_android }}" = "true" ] && [ -n "${{ steps.resolve.outputs.firebase_app_id_android }}" ]; then
+            NEED_FIREBASE="true"
+          fi
+          if [ "${{ inputs.build_ios }}" = "true" ] && [ -n "${{ steps.resolve.outputs.firebase_app_id_ios }}" ]; then
+            NEED_FIREBASE="true"
+          fi
+
+          if [ "${NEED_FIREBASE}" = "true" ] && [ -z "${{ secrets.FIREBASE_TOKEN }}" ]; then
+            echo "::error::FIREBASE_TOKEN é obrigatório para distribuição Firebase"
+            exit 1
+          fi
+
+          if [ "${{ steps.resolve.outputs.deploy_via_fastlane }}" = "true" ]; then
+            if [ "${{ inputs.build_android }}" = "true" ] && [ -z "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" ]; then
+              echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON é obrigatório para fastlane android"
+              exit 1
+            fi
+            if [ "${{ inputs.build_ios }}" = "true" ] && { [ -z "${{ secrets.APP_STORE_CONNECT_KEY_ID }}" ] || [ -z "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" ] || [ -z "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}" ]; }; then
+              echo "::error::Credenciais App Store Connect incompletas para fastlane iOS"
+              exit 1
+            fi
+          fi
+
+      - name: Download Android artifact
+        if: ${{ inputs.build_android && steps.resolve.outputs.firebase_app_id_android != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: app-android-artifact
+          path: ${{ runner.temp }}/android
+
+      - name: Resolve Android file
+        if: ${{ inputs.build_android && steps.resolve.outputs.firebase_app_id_android != '' }}
+        run: |
+          set -euo pipefail
+          FILE="$(find "$RUNNER_TEMP/android" -type f | head -n 1)"
+          test -n "$FILE"
+          echo "ANDROID_FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Distribute Android (Firebase)
+        if: ${{ inputs.build_android && steps.resolve.outputs.firebase_app_id_android != '' }}
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ steps.resolve.outputs.firebase_app_id_android }}
+          token: ${{ secrets.FIREBASE_TOKEN }}
+          groups: ${{ steps.resolve.outputs.firebase_groups }}
+          file: ${{ env.ANDROID_FILE }}
+
+      - name: Download iOS artifact
+        if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: app-ios-artifact
+          path: ${{ runner.temp }}/ios
+
+      - name: Resolve iOS file
+        if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
+        run: |
+          set -euo pipefail
+          FILE="$(find "$RUNNER_TEMP/ios" -type f | head -n 1)"
+          test -n "$FILE"
+          echo "IOS_FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Distribute iOS (Firebase)
+        if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ steps.resolve.outputs.firebase_app_id_ios }}
+          token: ${{ secrets.FIREBASE_TOKEN }}
+          groups: ${{ steps.resolve.outputs.firebase_groups }}
+          file: ${{ env.IOS_FILE }}
+
+      - name: Checkout for Fastlane release
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
+        uses: actions/checkout@v6
+
+      - name: Setup Ruby
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Setup Node
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Fastlane dependencies
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
+        working-directory: ${{ steps.resolve.outputs.fastlane_working_directory }}
+        run: ${{ steps.resolve.outputs.bundle_install_cmd }}
+
+      - name: Configure App Store Connect API key
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' && secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 != '' }}
+        working-directory: ${{ steps.resolve.outputs.fastlane_working_directory }}
+        run: |
+          set -euo pipefail
+          mkdir -p fastlane
+          printf '%s' "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}" | base64 -d > fastlane/AuthKey.p8
+
+      - name: Release Android (Fastlane)
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' && inputs.build_android }}
+        working-directory: ${{ steps.resolve.outputs.fastlane_working_directory }}
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: bundle exec fastlane ${{ steps.resolve.outputs.fastlane_android_lane }}
+
+      - name: Release iOS (Fastlane)
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' && inputs.build_ios }}
+        working-directory: ${{ steps.resolve.outputs.fastlane_working_directory }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+        run: bundle exec fastlane ${{ steps.resolve.outputs.fastlane_ios_lane }}
+
+      - name: Publish deploy summary
+        if: always()
+        run: |
+          {
+            echo "## deploy summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- firebase android app id: ${{ steps.resolve.outputs.firebase_app_id_android != '' && 'configured' || 'not-configured' }}"
+            echo "- firebase ios app id: ${{ steps.resolve.outputs.firebase_app_id_ios != '' && 'configured' || 'not-configured' }}"
+            echo "- fastlane release: ${{ steps.resolve.outputs.deploy_via_fastlane }}"
+            echo "- ref: ${GITHUB_REF}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  summary:
+    name: summary
+    if: ${{ always() }}
+    needs:
+      - quality
+      - build
+      - security
+      - release
+      - pre_deploy_config
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Publish pipeline summary
+        run: |
+          {
+            echo "## v2-app summary"
+            echo ""
+            echo "- ref: \`${GITHUB_REF}\`"
+            echo "- event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- environment: \`${{ inputs.environment }}\`"
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| quality | ${{ needs.quality.result }} |"
+            echo "| build | ${{ needs.build.result }} |"
+            echo "| security | ${{ needs.security.result }} |"
+            echo "| release | ${{ needs.release.result }} |"
+            echo "| pre-deploy-config | ${{ needs.pre_deploy_config.result }} |"
+            echo "| deploy | ${{ needs.deploy.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish execution path
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          PRE_DEPLOY_RESULT: ${{ needs.pre_deploy_config.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          set -euo pipefail
+
+          flow_part() {
+            local label="$1"
+            local result="$2"
+            if [ "${result}" = "success" ]; then
+              printf "%s" "${label}"
+            elif [ "${result}" = "skipped" ]; then
+              printf "(%s skipped)" "${label}"
+            else
+              printf "%s[%s]" "${label}" "${result}"
+            fi
+          }
+
+          FLOW="$(flow_part "quality" "${QUALITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "build" "${BUILD_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "security" "${SECURITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "release" "${RELEASE_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "pre-deploy-config" "${PRE_DEPLOY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "deploy" "${DEPLOY_RESULT}")"
+
+          OVERALL="success"
+          for result in "${QUALITY_RESULT}" "${BUILD_RESULT}" "${SECURITY_RESULT}" "${RELEASE_RESULT}" "${PRE_DEPLOY_RESULT}" "${DEPLOY_RESULT}"; do
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
+              OVERALL="failed"
+              break
+            fi
+          done
+
+          {
+            echo ""
+            echo "### execution path"
+            echo "- overall: \`${OVERALL}\`"
+            echo "- path: \`${FLOW}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce CI gates
+        if: ${{ needs.quality.result == 'failure' || needs.quality.result == 'cancelled' || needs.build.result == 'failure' || needs.build.result == 'cancelled' || needs.security.result == 'failure' || needs.security.result == 'cancelled' || needs.pre_deploy_config.result == 'failure' || needs.pre_deploy_config.result == 'cancelled' }}
+        run: |
+          echo "::error::Falha nos gates obrigatórios (quality/build/security/pre-deploy-config)."
+          exit 1

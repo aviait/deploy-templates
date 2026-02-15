@@ -1,0 +1,983 @@
+name: v2 - Worker CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: false
+        type: string
+        default: ""
+      environment:
+        required: true
+        type: string
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      dockerfile:
+        required: false
+        type: string
+        default: "Dockerfile"
+      image_name:
+        required: false
+        type: string
+        default: ""
+      worker_name:
+        required: false
+        type: string
+        default: ""
+      ssh_user:
+        required: false
+        type: string
+        default: ""
+      ssh_host:
+        required: false
+        type: string
+        default: ""
+      ssh_remote_port:
+        required: false
+        type: number
+        default: 0
+      ssh_known_hosts:
+        required: false
+        type: string
+        default: ""
+      require_ssh_known_hosts:
+        required: false
+        type: boolean
+        default: false
+      worker_run_envs:
+        required: false
+        type: string
+        default: ""
+      worker_extra_args:
+        required: false
+        type: string
+        default: ""
+      remote_docker_login:
+        required: false
+        type: boolean
+        default: true
+      image_retention_count:
+        required: false
+        type: number
+        default: 0
+      startup_check_retries:
+        required: false
+        type: number
+        default: 0
+      startup_check_delay_seconds:
+        required: false
+        type: number
+        default: 0
+      prune_runner:
+        required: false
+        type: boolean
+        default: true
+      semver_prefix:
+        required: false
+        type: string
+        default: "v"
+      enable_release:
+        required: false
+        type: boolean
+        default: true
+      deploy_on_tag_only:
+        required: false
+        type: boolean
+        default: false
+      inject_all_github_vars:
+        required: false
+        type: boolean
+        default: true
+      github_vars_prefix:
+        required: false
+        type: string
+        default: ""
+      github_vars_exclude:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      PEM_KEY:
+        required: false
+      DEPLOY_REGISTRY_USERNAME:
+        required: false
+      DEPLOY_REGISTRY_PASSWORD:
+        required: false
+      WORKER_RUN_ENVS_FILE:
+        required: false
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - run: ${{ inputs.lint_cmd }}
+      - run: ${{ inputs.typecheck_cmd }}
+      - run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      stage_image: ${{ steps.meta.outputs.stage_image }}
+      release_image: ${{ steps.meta.outputs.release_image }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Docker metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE_INPUT="${{ inputs.image_name }}"
+          if [ -z "${IMAGE_INPUT}" ]; then
+            IMAGE_INPUT="${GITHUB_REPOSITORY}/worker"
+          fi
+
+          IMAGE="ghcr.io/${IMAGE_INPUT}"
+          IMAGE="${IMAGE,,}"
+          SHA_TAG="sha-${GITHUB_SHA::12}"
+          STAGE_IMAGE="${IMAGE}:${SHA_TAG}"
+          RELEASE_TAG=""
+          RELEASE_IMAGE=""
+          PUSH_IMAGE="true"
+
+          if [[ "${GITHUB_REF}" == refs/pull/* ]]; then
+            PUSH_IMAGE="false"
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/${{ inputs.semver_prefix }}* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+            RELEASE_IMAGE="${IMAGE}:${RELEASE_TAG}"
+          fi
+
+          {
+            echo "stage_image=${STAGE_IMAGE}"
+            echo "release_image=${RELEASE_IMAGE}"
+            echo "release_tag=${RELEASE_TAG}"
+            echo "push_image=${PUSH_IMAGE}"
+            echo "tags<<TAGLIST"
+            echo "${STAGE_IMAGE}"
+            echo "TAGLIST"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.working_directory }}
+          file: ${{ inputs.working_directory }}/${{ inputs.dockerfile }}
+          push: ${{ steps.meta.outputs.push_image == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=worker-env
+          cache-to: type=gha,mode=max,scope=worker-env
+
+      - name: Save image metadata
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/worker-image.json" <<JSON
+          {
+            "stage_image": "${{ steps.meta.outputs.stage_image }}",
+            "release_image": "${{ steps.meta.outputs.release_image }}",
+            "release_tag": "${{ steps.meta.outputs.release_tag }}",
+            "git_sha": "${GITHUB_SHA}",
+            "environment": "${{ inputs.environment }}"
+          }
+          JSON
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-image-metadata
+          path: ${{ runner.temp }}/worker-image.json
+
+  security:
+    name: security
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ inputs.enable_release && startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      release_image: ${{ steps.tag_image.outputs.release_image }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and publish semver image
+        id: tag_image
+        run: |
+          set -euo pipefail
+          STAGE_IMAGE="${{ needs.build.outputs.stage_image }}"
+          RELEASE_IMAGE="${{ needs.build.outputs.release_image }}"
+
+          if [ -z "${RELEASE_IMAGE}" ]; then
+            echo "::error::release_image vazio para tag de release"
+            exit 1
+          fi
+
+          IMAGE_REPO="${RELEASE_IMAGE%:*}"
+          docker pull "${STAGE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "${RELEASE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "${IMAGE_REPO}:latest"
+          docker push "${RELEASE_IMAGE}"
+          docker push "${IMAGE_REPO}:latest"
+          echo "release_image=${RELEASE_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: worker-image-metadata
+          path: ${{ runner.temp }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/worker-image.json
+
+  pre_deploy_config:
+    name: pre-deploy-config
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name == 'pull_request' }}
+    needs: [build, security, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_SSH_USER: ${{ inputs.ssh_user }}
+          IN_SSH_HOST: ${{ inputs.ssh_host }}
+          IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
+          IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
+          IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_WORKER_NAME: ${{ inputs.worker_name }}
+          IN_WORKER_RUN_ENVS: ${{ inputs.worker_run_envs }}
+          IN_WORKER_EXTRA_ARGS: ${{ inputs.worker_extra_args }}
+          IN_REMOTE_DOCKER_LOGIN: ${{ inputs.remote_docker_login }}
+          IN_IMAGE_RETENTION_COUNT: ${{ inputs.image_retention_count }}
+          IN_STARTUP_CHECK_RETRIES: ${{ inputs.startup_check_retries }}
+          IN_STARTUP_CHECK_DELAY_SECONDS: ${{ inputs.startup_check_delay_seconds }}
+          IN_PRUNE_RUNNER: ${{ inputs.prune_runner }}
+          IN_INJECT_ALL_GITHUB_VARS: ${{ inputs.inject_all_github_vars }}
+          IN_GITHUB_VARS_PREFIX: ${{ inputs.github_vars_prefix }}
+          IN_GITHUB_VARS_EXCLUDE: ${{ inputs.github_vars_exclude }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const pickPositiveInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '' || s === '0') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n > 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const pickNonNegativeInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
+            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
+            worker_name: pickString(process.env.IN_WORKER_NAME, vars.WORKER_NAME, process.env.IN_APP_NAME),
+            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, vars.WORKER_RUN_ENVS),
+            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, vars.WORKER_EXTRA_ARGS),
+            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, true),
+            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, vars.IMAGE_RETENTION_COUNT),
+            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, vars.STARTUP_CHECK_RETRIES),
+            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, vars.STARTUP_CHECK_DELAY_SECONDS),
+            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, true),
+            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, true),
+            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, vars.GITHUB_VARS_PREFIX),
+            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, vars.GITHUB_VARS_EXCLUDE),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
+
+          if [ "${{ steps.resolve.outputs.remote_docker_login }}" = "true" ] && { [ -z "${{ secrets.DEPLOY_REGISTRY_USERNAME }}" ] || [ -z "${{ secrets.DEPLOY_REGISTRY_PASSWORD }}" ]; }; then
+            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios quando remote_docker_login=true"
+            exit 1
+          fi
+
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            echo "::error::require_ssh_known_hosts=true exige ssh_known_hosts"
+            exit 1
+          fi
+
+      - name: Publish pre-deploy summary
+        if: always()
+        run: |
+          {
+            echo "## pre-deploy-config summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
+            echo "- worker name: ${{ steps.resolve.outputs.worker_name }}"
+            echo "- registry auth required: ${{ steps.resolve.outputs.remote_docker_login }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: deploy
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name != 'pull_request' && (!inputs.deploy_on_tag_only || startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix))) }}
+    needs: [build, security, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: worker-${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_SSH_USER: ${{ inputs.ssh_user }}
+          IN_SSH_HOST: ${{ inputs.ssh_host }}
+          IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
+          IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
+          IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_WORKER_NAME: ${{ inputs.worker_name }}
+          IN_WORKER_RUN_ENVS: ${{ inputs.worker_run_envs }}
+          IN_WORKER_EXTRA_ARGS: ${{ inputs.worker_extra_args }}
+          IN_REMOTE_DOCKER_LOGIN: ${{ inputs.remote_docker_login }}
+          IN_IMAGE_RETENTION_COUNT: ${{ inputs.image_retention_count }}
+          IN_STARTUP_CHECK_RETRIES: ${{ inputs.startup_check_retries }}
+          IN_STARTUP_CHECK_DELAY_SECONDS: ${{ inputs.startup_check_delay_seconds }}
+          IN_PRUNE_RUNNER: ${{ inputs.prune_runner }}
+          IN_INJECT_ALL_GITHUB_VARS: ${{ inputs.inject_all_github_vars }}
+          IN_GITHUB_VARS_PREFIX: ${{ inputs.github_vars_prefix }}
+          IN_GITHUB_VARS_EXCLUDE: ${{ inputs.github_vars_exclude }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const pickPositiveInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '' || s === '0') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n > 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const pickNonNegativeInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
+            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
+            worker_name: pickString(process.env.IN_WORKER_NAME, vars.WORKER_NAME, process.env.IN_APP_NAME),
+            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, vars.WORKER_RUN_ENVS),
+            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, vars.WORKER_EXTRA_ARGS),
+            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, true),
+            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, vars.IMAGE_RETENTION_COUNT),
+            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, vars.STARTUP_CHECK_RETRIES),
+            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, vars.STARTUP_CHECK_DELAY_SECONDS),
+            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, true),
+            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, true),
+            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, vars.GITHUB_VARS_PREFIX),
+            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, vars.GITHUB_VARS_EXCLUDE),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
+
+          if [ "${{ steps.resolve.outputs.remote_docker_login }}" = "true" ] && { [ -z "${{ secrets.DEPLOY_REGISTRY_USERNAME }}" ] || [ -z "${{ secrets.DEPLOY_REGISTRY_PASSWORD }}" ]; }; then
+            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios quando remote_docker_login=true"
+            exit 1
+          fi
+
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            echo "::error::require_ssh_known_hosts=true exige ssh_known_hosts"
+            exit 1
+          fi
+
+      - name: Configure known_hosts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          if [ -n "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            printf '%s\n' "${{ steps.resolve.outputs.ssh_known_hosts }}" >> ~/.ssh/known_hosts
+          fi
+
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" != "true" ]; then
+            ssh-keyscan -T 10 -H -p "${{ steps.resolve.outputs.ssh_remote_port }}" "${{ steps.resolve.outputs.ssh_host }}" >> ~/.ssh/known_hosts
+          fi
+
+          sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Configure SSH key
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          chmod 600 ./deploy-key.pem
+
+      - name: Build env file from GitHub vars
+        id: auto_vars
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          INJECT_ALL: ${{ steps.resolve.outputs.inject_all_github_vars }}
+          PREFIX: ${{ steps.resolve.outputs.github_vars_prefix }}
+          EXCLUDE: ${{ steps.resolve.outputs.github_vars_exclude }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+          const includeAll = String(process.env.INJECT_ALL || '').toLowerCase() === 'true';
+          const prefix = (process.env.PREFIX || '').trim();
+          const rawExclude = (process.env.EXCLUDE || '').trim();
+          const patterns = rawExclude
+            ? rawExclude.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
+            : [];
+
+          const isValidEnvName = (k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
+          const matchPattern = (key, pattern) => {
+            if (pattern.endsWith('*')) return key.startsWith(pattern.slice(0, -1));
+            return key === pattern;
+          };
+
+          const excluded = (key) => patterns.some((p) => matchPattern(key, p));
+
+          let lines = [];
+          let skippedInvalid = 0;
+          let skippedMultiline = 0;
+
+          if (includeAll) {
+            const keys = Object.keys(vars).sort();
+            for (const key of keys) {
+              if (prefix && !key.startsWith(prefix)) continue;
+              if (excluded(key)) continue;
+              if (!isValidEnvName(key)) {
+                skippedInvalid += 1;
+                continue;
+              }
+              const value = vars[key];
+              if (value === undefined || value === null) continue;
+              const str = String(value);
+              if (/[\r\n\0]/.test(str)) {
+                skippedMultiline += 1;
+                continue;
+              }
+              lines.push(`${key}=${str}`);
+            }
+          }
+
+          const path = `${process.env.RUNNER_TEMP}/worker-auto-vars.env`;
+          fs.writeFileSync(path, lines.length ? `${lines.join('\n')}\n` : '');
+
+          const b64 = lines.length ? Buffer.from(fs.readFileSync(path)).toString('base64') : '';
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_count=${lines.length}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_invalid=${skippedInvalid}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_multiline=${skippedMultiline}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_b64=${b64}\n`);
+          NODE
+
+      - name: Deploy worker via SSH
+        env:
+          STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
+          RELEASE_IMAGE: ${{ needs.release.outputs.release_image }}
+          IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+          SSH_USER: ${{ steps.resolve.outputs.ssh_user }}
+          SSH_HOST: ${{ steps.resolve.outputs.ssh_host }}
+          SSH_PORT: ${{ steps.resolve.outputs.ssh_remote_port }}
+          WORKER_NAME: ${{ steps.resolve.outputs.worker_name }}
+          WORKER_RUN_ENVS: ${{ steps.resolve.outputs.worker_run_envs }}
+          WORKER_RUN_ENVS_FILE_SECRET: ${{ secrets.WORKER_RUN_ENVS_FILE }}
+          AUTO_VARS_B64: ${{ steps.auto_vars.outputs.auto_vars_b64 }}
+          WORKER_EXTRA_ARGS: ${{ steps.resolve.outputs.worker_extra_args }}
+          STARTUP_CHECK_RETRIES: ${{ steps.resolve.outputs.startup_check_retries }}
+          STARTUP_CHECK_DELAY: ${{ steps.resolve.outputs.startup_check_delay_seconds }}
+          IMAGE_RETENTION_COUNT: ${{ steps.resolve.outputs.image_retention_count }}
+          REMOTE_DOCKER_LOGIN: ${{ steps.resolve.outputs.remote_docker_login }}
+          REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          TARGET_IMAGE="${STAGE_IMAGE}"
+          if [ "${IS_TAG}" = "true" ] && [ -n "${RELEASE_IMAGE}" ]; then
+            TARGET_IMAGE="${RELEASE_IMAGE}"
+          fi
+
+          WORKER_RUN_ENVS_B64="$(printf '%s' "${WORKER_RUN_ENVS}" | base64 | tr -d '\n')"
+
+          TMP_ENV_FILE="$(mktemp)"
+          trap 'rm -f "${TMP_ENV_FILE}"' EXIT
+
+          if [ -n "${WORKER_RUN_ENVS_FILE_SECRET}" ]; then
+            printf '%s\n' "${WORKER_RUN_ENVS_FILE_SECRET}" >> "${TMP_ENV_FILE}"
+          fi
+
+          if [ -n "${AUTO_VARS_B64}" ]; then
+            printf '%s' "${AUTO_VARS_B64}" | base64 -d >> "${TMP_ENV_FILE}"
+          fi
+
+          WORKER_RUN_ENVS_FILE_B64=""
+          if [ -s "${TMP_ENV_FILE}" ]; then
+            WORKER_RUN_ENVS_FILE_B64="$(base64 -w0 "${TMP_ENV_FILE}")"
+          fi
+
+          REPOSITORY="${TARGET_IMAGE%:*}"
+          REGISTRY="${TARGET_IMAGE%%/*}"
+
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=10 -p "${SSH_PORT}" -i ./deploy-key.pem \
+            "${SSH_USER}@${SSH_HOST}" \
+            env \
+            IMAGE_REF="${TARGET_IMAGE}" \
+            REPOSITORY="${REPOSITORY}" \
+            REGISTRY="${REGISTRY}" \
+            REGISTRY_USERNAME="${REGISTRY_USERNAME}" \
+            REGISTRY_PASSWORD="${REGISTRY_PASSWORD}" \
+            REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
+            WORKER_NAME="${WORKER_NAME}" \
+            WORKER_RUN_ENVS_B64="${WORKER_RUN_ENVS_B64}" \
+            WORKER_RUN_ENVS_FILE_B64="${WORKER_RUN_ENVS_FILE_B64}" \
+            WORKER_EXTRA_ARGS="${WORKER_EXTRA_ARGS}" \
+            STARTUP_CHECK_RETRIES="${STARTUP_CHECK_RETRIES}" \
+            STARTUP_CHECK_DELAY="${STARTUP_CHECK_DELAY}" \
+            IMAGE_RETENTION_COUNT="${IMAGE_RETENTION_COUNT}" \
+            bash -s << 'EOF'
+            set -euo pipefail
+
+            WORKER_RUN_ENVS="$(printf '%s' "${WORKER_RUN_ENVS_B64}" | base64 -d || true)"
+            TMP_ENV_FILE=""
+            DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${WORKER_NAME}")
+            WORKER_RUN_ENVS_ARRAY=()
+            WORKER_EXTRA_ARGS_ARRAY=()
+
+            cleanup_tmp_env_file() {
+              if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
+                rm -f "${TMP_ENV_FILE}"
+              fi
+            }
+            trap cleanup_tmp_env_file EXIT
+
+            if [ -n "${WORKER_RUN_ENVS_FILE_B64}" ]; then
+              TMP_ENV_FILE="$(mktemp)"
+              printf '%s' "${WORKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
+              DOCKER_RUN_ARGS+=(--env-file "${TMP_ENV_FILE}")
+            fi
+
+            if [ -n "${WORKER_RUN_ENVS}" ]; then
+              read -r -a WORKER_RUN_ENVS_ARRAY <<< "${WORKER_RUN_ENVS}"
+              DOCKER_RUN_ARGS+=("${WORKER_RUN_ENVS_ARRAY[@]}")
+            fi
+
+            if [ -n "${WORKER_EXTRA_ARGS}" ]; then
+              read -r -a WORKER_EXTRA_ARGS_ARRAY <<< "${WORKER_EXTRA_ARGS}"
+            fi
+
+            PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${WORKER_NAME}" 2>/dev/null || true)"
+
+            if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
+              echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME}" --password-stdin
+            fi
+
+            docker pull "${IMAGE_REF}"
+
+            docker stop "${WORKER_NAME}" || true
+            docker rm "${WORKER_NAME}" || true
+
+            if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}" "${WORKER_EXTRA_ARGS_ARRAY[@]}"; then
+              if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
+                docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
+              fi
+              exit 1
+            fi
+
+            attempt=1
+            while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
+              if docker ps --filter "name=${WORKER_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+                break
+              fi
+              if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
+                docker stop "${WORKER_NAME}" || true
+                docker rm "${WORKER_NAME}" || true
+                if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
+                  docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
+                fi
+                exit 1
+              fi
+              attempt=$((attempt+1))
+              sleep "${STARTUP_CHECK_DELAY}"
+            done
+
+            OLD_IMAGE_IDS="$(docker image ls "${REPOSITORY}" --format '{{.CreatedAt}} {{.ID}}' | sort -r | awk "NR>${IMAGE_RETENTION_COUNT}{print \$2}")"
+            if [ -n "${OLD_IMAGE_IDS}" ]; then
+              echo "${OLD_IMAGE_IDS}" | xargs -r docker image rm -f || true
+            fi
+            docker image prune -f >/dev/null 2>&1 || true
+          EOF
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ./deploy-key.pem
+
+      - name: Prune runner
+        if: ${{ always() && steps.resolve.outputs.prune_runner == 'true' }}
+        run: docker system prune -af --volumes || true
+
+      - name: Publish deploy summary
+        if: always()
+        run: |
+          {
+            echo "## deploy summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- ref: ${GITHUB_REF}"
+            echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
+            echo "- auto vars skipped (invalid name): ${{ steps.auto_vars.outputs.skipped_invalid }}"
+            echo "- auto vars skipped (multiline/null): ${{ steps.auto_vars.outputs.skipped_multiline }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  summary:
+    name: summary
+    if: ${{ always() }}
+    needs:
+      - quality
+      - build
+      - security
+      - release
+      - pre_deploy_config
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Publish pipeline summary
+        run: |
+          {
+            echo "## v2-worker summary"
+            echo ""
+            echo "- ref: \`${GITHUB_REF}\`"
+            echo "- event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- environment: \`${{ inputs.environment }}\`"
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| quality | ${{ needs.quality.result }} |"
+            echo "| build | ${{ needs.build.result }} |"
+            echo "| security | ${{ needs.security.result }} |"
+            echo "| release | ${{ needs.release.result }} |"
+            echo "| pre-deploy-config | ${{ needs.pre_deploy_config.result }} |"
+            echo "| deploy | ${{ needs.deploy.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish execution path
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          PRE_DEPLOY_RESULT: ${{ needs.pre_deploy_config.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          set -euo pipefail
+
+          flow_part() {
+            local label="$1"
+            local result="$2"
+            if [ "${result}" = "success" ]; then
+              printf "%s" "${label}"
+            elif [ "${result}" = "skipped" ]; then
+              printf "(%s skipped)" "${label}"
+            else
+              printf "%s[%s]" "${label}" "${result}"
+            fi
+          }
+
+          FLOW="$(flow_part "quality" "${QUALITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "build" "${BUILD_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "security" "${SECURITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "release" "${RELEASE_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "pre-deploy-config" "${PRE_DEPLOY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "deploy" "${DEPLOY_RESULT}")"
+
+          OVERALL="success"
+          for result in "${QUALITY_RESULT}" "${BUILD_RESULT}" "${SECURITY_RESULT}" "${RELEASE_RESULT}" "${PRE_DEPLOY_RESULT}" "${DEPLOY_RESULT}"; do
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
+              OVERALL="failed"
+              break
+            fi
+          done
+
+          {
+            echo ""
+            echo "### execution path"
+            echo "- overall: \`${OVERALL}\`"
+            echo "- path: \`${FLOW}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce CI gates
+        if: ${{ needs.quality.result == 'failure' || needs.quality.result == 'cancelled' || needs.build.result == 'failure' || needs.build.result == 'cancelled' || needs.security.result == 'failure' || needs.security.result == 'cancelled' || needs.pre_deploy_config.result == 'failure' || needs.pre_deploy_config.result == 'cancelled' }}
+        run: |
+          echo "::error::Falha nos gates obrigatórios (quality/build/security/pre-deploy-config)."
+          exit 1

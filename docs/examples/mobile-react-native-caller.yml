@@ -1,0 +1,20 @@
+name: Mobile React Native Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  mobile:
+    uses: aviait/deploy-templates/.github/workflows/template-mobile-react-native.yml@main
+    with:
+      build_android: true
+      build_ios: true
+      firebase_app_id_android: 1:123456:android:abcd
+      firebase_app_id_ios: 1:123456:ios:efgh
+      fastlane_android_lane: android release
+      fastlane_ios_lane: ios release
+    secrets: inherit

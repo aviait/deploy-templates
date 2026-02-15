@@ -1,0 +1,20 @@
+name: Frontend Web Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  frontend:
+    uses: aviait/deploy-templates/.github/workflows/template-frontend-web.yml@main
+    with:
+      aws_role_arn_stage: arn:aws:iam::111111111111:role/gha-stage
+      aws_role_arn_prod: arn:aws:iam::111111111111:role/gha-prod
+      s3_bucket_stage: my-web-stage
+      s3_bucket_prod: my-web-prod
+      smoke_url_stage: https://stage.example.com
+      smoke_url_prod: https://www.example.com
+    secrets: inherit

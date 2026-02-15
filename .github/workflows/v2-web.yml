@@ -1,0 +1,731 @@
+name: v2 - Web CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: false
+        type: string
+        default: ""
+      environment:
+        required: true
+        type: string
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      build_cmd:
+        required: false
+        type: string
+        default: "npm run build"
+      build_output_dir:
+        required: false
+        type: string
+        default: "dist"
+      artifact_name:
+        required: false
+        type: string
+        default: "web-build"
+      semver_prefix:
+        required: false
+        type: string
+        default: "v"
+      enable_release:
+        required: false
+        type: boolean
+        default: true
+      deploy_on_tag_only:
+        required: false
+        type: boolean
+        default: false
+      ssh_user:
+        required: false
+        type: string
+        default: ""
+      ssh_host:
+        required: false
+        type: string
+        default: ""
+      ssh_remote_port:
+        required: false
+        type: number
+        default: 0
+      ssh_known_hosts:
+        required: false
+        type: string
+        default: ""
+      require_ssh_known_hosts:
+        required: false
+        type: boolean
+        default: false
+      remote_dir:
+        required: false
+        type: string
+        default: "/var/www/dominio"
+      remote_owner:
+        required: false
+        type: string
+        default: "__AUTO__"
+      rsync_excludes:
+        required: false
+        type: string
+        default: ""
+      smoke_url:
+        required: false
+        type: string
+        default: ""
+      smoke_retries:
+        required: false
+        type: number
+        default: 0
+      smoke_delay_seconds:
+        required: false
+        type: number
+        default: 0
+    secrets:
+      PEM_KEY:
+        required: false
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Lint
+        run: ${{ inputs.lint_cmd }}
+
+      - name: Typecheck
+        run: ${{ inputs.typecheck_cmd }}
+
+      - name: Tests
+        run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Build production assets
+        run: ${{ inputs.build_cmd }}
+
+      - name: Pack artifact
+        run: |
+          set -euo pipefail
+          test -d "${{ inputs.build_output_dir }}"
+          tar -czf "$RUNNER_TEMP/web-build.tgz" "${{ inputs.build_output_dir }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/web-build.tgz
+          if-no-files-found: error
+
+  security:
+    name: security
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ inputs.enable_release && startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/web-build.tgz
+
+  pre_deploy_config:
+    name: pre-deploy-config
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name == 'pull_request' }}
+    needs: [build, security, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_SSH_USER: ${{ inputs.ssh_user }}
+          IN_SSH_HOST: ${{ inputs.ssh_host }}
+          IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
+          IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
+          IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_REMOTE_DIR: ${{ inputs.remote_dir }}
+          IN_REMOTE_OWNER: ${{ inputs.remote_owner }}
+          IN_RSYNC_EXCLUDES: ${{ inputs.rsync_excludes }}
+          IN_SMOKE_URL: ${{ inputs.smoke_url }}
+          IN_SMOKE_RETRIES: ${{ inputs.smoke_retries }}
+          IN_SMOKE_DELAY_SECONDS: ${{ inputs.smoke_delay_seconds }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const pickPositiveInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '' || s === '0') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n > 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const pickNonNegativeInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
+            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
+            remote_dir: pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR, '/var/www/dominio'),
+            remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
+            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL),
+            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
+            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.remote_dir }}" ] || { echo "::error::remote_dir ausente (input ou var REMOTE_DIR)"; exit 1; }
+          [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
+
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            echo "::error::require_ssh_known_hosts=true exige ssh_known_hosts"
+            exit 1
+          fi
+
+      - name: Publish pre-deploy summary
+        if: always()
+        run: |
+          {
+            echo "## pre-deploy-config summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
+            echo "- remote dir configured: ${{ steps.resolve.outputs.remote_dir != '' && 'yes' || 'no' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: deploy
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name != 'pull_request' && (!inputs.deploy_on_tag_only || startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix))) }}
+    needs: [build, security, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: web-${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve deploy config (inputs + GitHub vars)
+        id: resolve
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_SSH_USER: ${{ inputs.ssh_user }}
+          IN_SSH_HOST: ${{ inputs.ssh_host }}
+          IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
+          IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
+          IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
+          IN_REMOTE_DIR: ${{ inputs.remote_dir }}
+          IN_REMOTE_OWNER: ${{ inputs.remote_owner }}
+          IN_RSYNC_EXCLUDES: ${{ inputs.rsync_excludes }}
+          IN_SMOKE_URL: ${{ inputs.smoke_url }}
+          IN_SMOKE_RETRIES: ${{ inputs.smoke_retries }}
+          IN_SMOKE_DELAY_SECONDS: ${{ inputs.smoke_delay_seconds }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+
+          const pickString = (...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s !== '') return s;
+            }
+            return '';
+          };
+
+          const pickPositiveInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '' || s === '0') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n > 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const pickNonNegativeInt = (fallback, ...values) => {
+            for (const v of values) {
+              if (v === undefined || v === null) continue;
+              const s = String(v).trim();
+              if (s === '') continue;
+              const n = Number(s);
+              if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+            }
+            return fallback;
+          };
+
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null) return fallback;
+            const s = String(v).trim().toLowerCase();
+            if (s === '') return fallback;
+            if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+            if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+            return fallback;
+          };
+
+          const out = {
+            app_name: pickString(process.env.IN_APP_NAME),
+            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
+            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
+            remote_dir: pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR, '/var/www/dominio'),
+            remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
+            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL),
+            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
+            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
+          };
+
+          for (const [k, v] of Object.entries(out)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v)}\n`);
+          }
+          NODE
+
+      - name: Validate deploy config
+        run: |
+          set -euo pipefail
+          [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.remote_dir }}" ] || { echo "::error::remote_dir ausente (input ou var REMOTE_DIR)"; exit 1; }
+          [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
+
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" = "true" ] && [ -z "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            echo "::error::require_ssh_known_hosts=true exige ssh_known_hosts"
+            exit 1
+          fi
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Unpack artifact
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/web-dist"
+          tar -xzf "$RUNNER_TEMP/web-build.tgz" -C "$RUNNER_TEMP/web-dist"
+
+      - name: Install rsync and SSH client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync openssh-client
+
+      - name: Configure known_hosts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "${{ steps.resolve.outputs.ssh_known_hosts }}" ]; then
+            printf '%s\n' "${{ steps.resolve.outputs.ssh_known_hosts }}" >> ~/.ssh/known_hosts
+          fi
+          if [ "${{ steps.resolve.outputs.require_ssh_known_hosts }}" != "true" ]; then
+            ssh-keyscan -T 10 -H -p "${{ steps.resolve.outputs.ssh_remote_port }}" "${{ steps.resolve.outputs.ssh_host }}" >> ~/.ssh/known_hosts
+          fi
+          sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Configure SSH key
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
+          chmod 600 ./deploy-key.pem
+
+      - name: Create remote directory
+        run: |
+          set -euo pipefail
+          REMOTE_OWNER="${{ steps.resolve.outputs.remote_owner }}"
+          if [ "${REMOTE_OWNER}" = "__AUTO__" ]; then
+            REMOTE_OWNER="${{ steps.resolve.outputs.ssh_user }}:${{ steps.resolve.outputs.ssh_user }}"
+          fi
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p "${{ steps.resolve.outputs.ssh_remote_port }}" -i ./deploy-key.pem \
+            "${{ steps.resolve.outputs.ssh_user }}@${{ steps.resolve.outputs.ssh_host }}" \
+            "sudo mkdir -p '${{ steps.resolve.outputs.remote_dir }}' && if [ -n '${REMOTE_OWNER}' ]; then sudo chown '${REMOTE_OWNER}' '${{ steps.resolve.outputs.remote_dir }}'; fi"
+
+      - name: Deploy static files via rsync
+        run: |
+          set -euo pipefail
+          EXCLUDES=()
+          if [ -n "${{ steps.resolve.outputs.rsync_excludes }}" ]; then
+            while IFS= read -r pattern; do
+              [ -z "${pattern}" ] && continue
+              EXCLUDES+=("--exclude=${pattern}")
+            done <<< "${{ steps.resolve.outputs.rsync_excludes }}"
+          fi
+
+          rsync -avz --delete --progress --stats "${EXCLUDES[@]}" "$RUNNER_TEMP/web-dist/${{ inputs.build_output_dir }}/" \
+            -e "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ steps.resolve.outputs.ssh_remote_port }} -i ./deploy-key.pem" \
+            "${{ steps.resolve.outputs.ssh_user }}@${{ steps.resolve.outputs.ssh_host }}:${{ steps.resolve.outputs.remote_dir }}"
+
+      - name: Smoke check
+        if: ${{ steps.resolve.outputs.smoke_url != '' }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 "${{ steps.resolve.outputs.smoke_retries }}"); do
+            if curl -fsSL --max-time 10 "${{ steps.resolve.outputs.smoke_url }}" >/dev/null; then
+              exit 0
+            fi
+            sleep "${{ steps.resolve.outputs.smoke_delay_seconds }}"
+          done
+          echo "::error::Smoke check falhou"
+          exit 1
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ./deploy-key.pem
+
+      - name: Publish deploy summary
+        if: always()
+        run: |
+          {
+            echo "## deploy summary"
+            echo "- app: ${{ steps.resolve.outputs.app_name }}"
+            echo "- environment: ${{ inputs.environment }}"
+            echo "- remote dir: ${{ steps.resolve.outputs.remote_dir }}"
+            echo "- ref: ${GITHUB_REF}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  summary:
+    name: summary
+    if: ${{ always() }}
+    needs:
+      - quality
+      - build
+      - security
+      - release
+      - pre_deploy_config
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Publish pipeline summary
+        run: |
+          {
+            echo "## v2-web summary"
+            echo ""
+            echo "- ref: \`${GITHUB_REF}\`"
+            echo "- event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- environment: \`${{ inputs.environment }}\`"
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| quality | ${{ needs.quality.result }} |"
+            echo "| build | ${{ needs.build.result }} |"
+            echo "| security | ${{ needs.security.result }} |"
+            echo "| release | ${{ needs.release.result }} |"
+            echo "| pre-deploy-config | ${{ needs.pre_deploy_config.result }} |"
+            echo "| deploy | ${{ needs.deploy.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish execution path
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          PRE_DEPLOY_RESULT: ${{ needs.pre_deploy_config.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          set -euo pipefail
+
+          flow_part() {
+            local label="$1"
+            local result="$2"
+            if [ "${result}" = "success" ]; then
+              printf "%s" "${label}"
+            elif [ "${result}" = "skipped" ]; then
+              printf "(%s skipped)" "${label}"
+            else
+              printf "%s[%s]" "${label}" "${result}"
+            fi
+          }
+
+          FLOW="$(flow_part "quality" "${QUALITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "build" "${BUILD_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "security" "${SECURITY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "release" "${RELEASE_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "pre-deploy-config" "${PRE_DEPLOY_RESULT}")"
+          FLOW="${FLOW} -> $(flow_part "deploy" "${DEPLOY_RESULT}")"
+
+          OVERALL="success"
+          for result in "${QUALITY_RESULT}" "${BUILD_RESULT}" "${SECURITY_RESULT}" "${RELEASE_RESULT}" "${PRE_DEPLOY_RESULT}" "${DEPLOY_RESULT}"; do
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
+              OVERALL="failed"
+              break
+            fi
+          done
+
+          {
+            echo ""
+            echo "### execution path"
+            echo "- overall: \`${OVERALL}\`"
+            echo "- path: \`${FLOW}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce CI gates
+        if: ${{ needs.quality.result == 'failure' || needs.quality.result == 'cancelled' || needs.build.result == 'failure' || needs.build.result == 'cancelled' || needs.security.result == 'failure' || needs.security.result == 'cancelled' || needs.pre_deploy_config.result == 'failure' || needs.pre_deploy_config.result == 'cancelled' }}
+        run: |
+          echo "::error::Falha nos gates obrigatórios (quality/build/security/pre-deploy-config)."
+          exit 1

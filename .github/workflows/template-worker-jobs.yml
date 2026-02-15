@@ -1,0 +1,523 @@
+name: Template - Worker CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      build_cmd:
+        required: false
+        type: string
+        default: "npm run build"
+      migration_cmd:
+        required: false
+        type: string
+        default: ""
+      migration_timeout_seconds:
+        required: false
+        type: number
+        default: 600
+      dockerfile:
+        required: false
+        type: string
+        default: "Dockerfile"
+      image_name:
+        required: true
+        type: string
+      worker_kind:
+        required: false
+        type: string
+        default: "deployment"
+      k8s_namespace_stage:
+        required: true
+        type: string
+      k8s_namespace_prod:
+        required: true
+        type: string
+      k8s_workload_name:
+        required: true
+        type: string
+      k8s_container_name:
+        required: true
+        type: string
+      queue_config_map_stage:
+        required: false
+        type: string
+        default: ""
+      queue_config_map_prod:
+        required: false
+        type: string
+        default: ""
+      cron_schedule_stage:
+        required: false
+        type: string
+        default: ""
+      cron_schedule_prod:
+        required: false
+        type: string
+        default: ""
+      graceful_shutdown_seconds:
+        required: false
+        type: number
+        default: 30
+      require_prestop_hook:
+        required: false
+        type: boolean
+        default: false
+      rollout_timeout_seconds:
+        required: false
+        type: number
+        default: 240
+    secrets:
+      KUBE_CONFIG_STAGE:
+        required: true
+      KUBE_CONFIG_PROD:
+        required: true
+
+jobs:
+  quality:
+    name: quality
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+      - if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+      - run: ${{ inputs.lint_cmd }}
+      - run: ${{ inputs.typecheck_cmd }}
+      - run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      stage_image: ${{ steps.meta.outputs.stage_image }}
+      release_image: ${{ steps.meta.outputs.release_image }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Docker metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ inputs.image_name }}"
+          SHA_TAG="sha-${GITHUB_SHA::12}"
+          STAGE_IMAGE="${IMAGE}:${SHA_TAG}"
+          RELEASE_TAG=""
+          RELEASE_IMAGE=""
+          PUSH_IMAGE="false"
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_REF}" == refs/tags/v* ]]; then
+            PUSH_IMAGE="true"
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+            RELEASE_IMAGE="${IMAGE}:${RELEASE_TAG}"
+          fi
+
+          {
+            echo "stage_image=${STAGE_IMAGE}"
+            echo "release_image=${RELEASE_IMAGE}"
+            echo "release_tag=${RELEASE_TAG}"
+            echo "push_image=${PUSH_IMAGE}"
+            echo "tags<<TAGLIST"
+            echo "${STAGE_IMAGE}"
+            echo "TAGLIST"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Worker image (push main/tags)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.working_directory }}
+          file: ${{ inputs.working_directory }}/${{ inputs.dockerfile }}
+          push: ${{ steps.meta.outputs.push_image == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Save build metadata
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/worker-image.json" <<JSON
+          {
+            "stage_image": "${{ steps.meta.outputs.stage_image }}",
+            "release_image": "${{ steps.meta.outputs.release_image }}",
+            "release_tag": "${{ steps.meta.outputs.release_tag }}",
+            "git_sha": "${GITHUB_SHA}"
+          }
+          JSON
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-image-metadata
+          path: ${{ runner.temp }}/worker-image.json
+
+  security:
+    name: security
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      release_image: ${{ steps.tag_image.outputs.release_image }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag release image
+        id: tag_image
+        run: |
+          set -euo pipefail
+          STAGE_IMAGE="${{ needs.build.outputs.stage_image }}"
+          RELEASE_IMAGE="${{ needs.build.outputs.release_image }}"
+          docker pull "${STAGE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "${RELEASE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "ghcr.io/${{ inputs.image_name }}:latest"
+          docker push "${RELEASE_IMAGE}"
+          docker push "ghcr.io/${{ inputs.image_name }}:latest"
+          echo "release_image=${RELEASE_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: worker-image-metadata
+          path: ${{ runner.temp }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/worker-image.json
+
+  deploy_stage:
+    name: deploy-stage
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: stage
+    steps:
+      - name: Configure kubeconfig (stage)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_STAGE }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy worker (stage)
+        run: |
+          set -euo pipefail
+          NS="${{ inputs.k8s_namespace_stage }}"
+          WORKLOAD="${{ inputs.k8s_workload_name }}"
+          CONTAINER="${{ inputs.k8s_container_name }}"
+          IMAGE="${{ needs.build.outputs.stage_image }}"
+          KIND="${{ inputs.worker_kind }}"
+
+          if [ "${KIND}" = "deployment" ]; then
+            TGS="$(kubectl -n "${NS}" get deployment "${WORKLOAD}" -o jsonpath='{.spec.template.spec.terminationGracePeriodSeconds}')"
+            if [ -z "${TGS}" ] || [ "${TGS}" -lt "${{ inputs.graceful_shutdown_seconds }}" ]; then
+              echo "::error::terminationGracePeriodSeconds inválido para graceful shutdown."
+              exit 1
+            fi
+
+            if [ "${{ inputs.require_prestop_hook }}" = "true" ]; then
+              PRESTOP="$(kubectl -n "${NS}" get deployment "${WORKLOAD}" -o jsonpath='{.spec.template.spec.containers[?(@.name=="'"${CONTAINER}"'")].lifecycle.preStop.exec.command[0]}')"
+              if [ -z "${PRESTOP}" ]; then
+                echo "::error::preStop hook obrigatório não encontrado."
+                exit 1
+              fi
+            fi
+
+            if [ -n "${{ inputs.migration_cmd }}" ]; then
+              JOB_NAME="worker-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              kubectl -n "${NS}" create job "${JOB_NAME}" --image="${IMAGE}" -- /bin/sh -lc "${{ inputs.migration_cmd }}"
+              kubectl -n "${NS}" wait --for=condition=complete "job/${JOB_NAME}" --timeout="${{ inputs.migration_timeout_seconds }}s"
+              kubectl -n "${NS}" logs "job/${JOB_NAME}" --tail=200 || true
+              kubectl -n "${NS}" delete job "${JOB_NAME}" --ignore-not-found=true
+            fi
+
+            kubectl -n "${NS}" patch deployment "${WORKLOAD}" --type merge -p '{"spec":{"strategy":{"type":"Recreate"}}}'
+
+            if [ -n "${{ inputs.queue_config_map_stage }}" ]; then
+              kubectl -n "${NS}" set env "deployment/${WORKLOAD}" --containers="${CONTAINER}" --from="configmap/${{ inputs.queue_config_map_stage }}"
+            fi
+
+            kubectl -n "${NS}" set image "deployment/${WORKLOAD}" "${CONTAINER}=${IMAGE}"
+            if ! kubectl -n "${NS}" rollout status "deployment/${WORKLOAD}" --timeout="${{ inputs.rollout_timeout_seconds }}s"; then
+              kubectl -n "${NS}" rollout undo "deployment/${WORKLOAD}" || true
+              kubectl -n "${NS}" rollout status "deployment/${WORKLOAD}" --timeout="${{ inputs.rollout_timeout_seconds }}s" || true
+              echo "::error::Stage worker deploy failed. Rollback executed."
+              exit 1
+            fi
+          elif [ "${KIND}" = "cronjob" ]; then
+            POLICY="$(kubectl -n "${NS}" get cronjob "${WORKLOAD}" -o jsonpath='{.spec.concurrencyPolicy}')"
+            if [ "${POLICY}" != "Forbid" ] && [ "${POLICY}" != "Replace" ]; then
+              echo "::error::CronJob concurrencyPolicy deve ser Forbid ou Replace para evitar duplicidade."
+              exit 1
+            fi
+
+            OLD_IMAGE="$(kubectl -n "${NS}" get cronjob "${WORKLOAD}" -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[?(@.name=="'"${CONTAINER}"'")].image}')"
+
+            if [ -n "${{ inputs.queue_config_map_stage }}" ]; then
+              kubectl -n "${NS}" set env "cronjob/${WORKLOAD}" --containers="${CONTAINER}" --from="configmap/${{ inputs.queue_config_map_stage }}"
+            fi
+
+            if [ -n "${{ inputs.cron_schedule_stage }}" ]; then
+              kubectl -n "${NS}" patch cronjob "${WORKLOAD}" --type merge -p '{"spec":{"schedule":"${{ inputs.cron_schedule_stage }}"}}'
+            fi
+
+            if ! kubectl -n "${NS}" set image "cronjob/${WORKLOAD}" "${CONTAINER}=${IMAGE}"; then
+              kubectl -n "${NS}" set image "cronjob/${WORKLOAD}" "${CONTAINER}=${OLD_IMAGE}" || true
+              echo "::error::Stage cron deploy failed. Rollback executed."
+              exit 1
+            fi
+          else
+            echo "::error::worker_kind inválido: ${KIND}"
+            exit 1
+          fi
+
+  deploy_prod:
+    name: deploy-prod
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Configure kubeconfig (prod)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PROD }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy worker (prod)
+        run: |
+          set -euo pipefail
+          NS="${{ inputs.k8s_namespace_prod }}"
+          WORKLOAD="${{ inputs.k8s_workload_name }}"
+          CONTAINER="${{ inputs.k8s_container_name }}"
+          IMAGE="${{ needs.release.outputs.release_image }}"
+          KIND="${{ inputs.worker_kind }}"
+
+          if [ "${KIND}" = "deployment" ]; then
+            TGS="$(kubectl -n "${NS}" get deployment "${WORKLOAD}" -o jsonpath='{.spec.template.spec.terminationGracePeriodSeconds}')"
+            if [ -z "${TGS}" ] || [ "${TGS}" -lt "${{ inputs.graceful_shutdown_seconds }}" ]; then
+              echo "::error::terminationGracePeriodSeconds inválido para graceful shutdown."
+              exit 1
+            fi
+
+            if [ "${{ inputs.require_prestop_hook }}" = "true" ]; then
+              PRESTOP="$(kubectl -n "${NS}" get deployment "${WORKLOAD}" -o jsonpath='{.spec.template.spec.containers[?(@.name=="'"${CONTAINER}"'")].lifecycle.preStop.exec.command[0]}')"
+              if [ -z "${PRESTOP}" ]; then
+                echo "::error::preStop hook obrigatório não encontrado."
+                exit 1
+              fi
+            fi
+
+            if [ -n "${{ inputs.migration_cmd }}" ]; then
+              JOB_NAME="worker-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              kubectl -n "${NS}" create job "${JOB_NAME}" --image="${IMAGE}" -- /bin/sh -lc "${{ inputs.migration_cmd }}"
+              kubectl -n "${NS}" wait --for=condition=complete "job/${JOB_NAME}" --timeout="${{ inputs.migration_timeout_seconds }}s"
+              kubectl -n "${NS}" logs "job/${JOB_NAME}" --tail=200 || true
+              kubectl -n "${NS}" delete job "${JOB_NAME}" --ignore-not-found=true
+            fi
+
+            kubectl -n "${NS}" patch deployment "${WORKLOAD}" --type merge -p '{"spec":{"strategy":{"type":"Recreate"}}}'
+
+            if [ -n "${{ inputs.queue_config_map_prod }}" ]; then
+              kubectl -n "${NS}" set env "deployment/${WORKLOAD}" --containers="${CONTAINER}" --from="configmap/${{ inputs.queue_config_map_prod }}"
+            fi
+
+            kubectl -n "${NS}" set image "deployment/${WORKLOAD}" "${CONTAINER}=${IMAGE}"
+            if ! kubectl -n "${NS}" rollout status "deployment/${WORKLOAD}" --timeout="${{ inputs.rollout_timeout_seconds }}s"; then
+              kubectl -n "${NS}" rollout undo "deployment/${WORKLOAD}" || true
+              kubectl -n "${NS}" rollout status "deployment/${WORKLOAD}" --timeout="${{ inputs.rollout_timeout_seconds }}s" || true
+              echo "::error::Prod worker deploy failed. Rollback executed."
+              exit 1
+            fi
+          elif [ "${KIND}" = "cronjob" ]; then
+            POLICY="$(kubectl -n "${NS}" get cronjob "${WORKLOAD}" -o jsonpath='{.spec.concurrencyPolicy}')"
+            if [ "${POLICY}" != "Forbid" ] && [ "${POLICY}" != "Replace" ]; then
+              echo "::error::CronJob concurrencyPolicy deve ser Forbid ou Replace para evitar duplicidade."
+              exit 1
+            fi
+
+            OLD_IMAGE="$(kubectl -n "${NS}" get cronjob "${WORKLOAD}" -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[?(@.name=="'"${CONTAINER}"'")].image}')"
+
+            if [ -n "${{ inputs.queue_config_map_prod }}" ]; then
+              kubectl -n "${NS}" set env "cronjob/${WORKLOAD}" --containers="${CONTAINER}" --from="configmap/${{ inputs.queue_config_map_prod }}"
+            fi
+
+            if [ -n "${{ inputs.cron_schedule_prod }}" ]; then
+              kubectl -n "${NS}" patch cronjob "${WORKLOAD}" --type merge -p '{"spec":{"schedule":"${{ inputs.cron_schedule_prod }}"}}'
+            fi
+
+            if ! kubectl -n "${NS}" set image "cronjob/${WORKLOAD}" "${CONTAINER}=${IMAGE}"; then
+              kubectl -n "${NS}" set image "cronjob/${WORKLOAD}" "${CONTAINER}=${OLD_IMAGE}" || true
+              echo "::error::Prod cron deploy failed. Rollback executed."
+              exit 1
+            fi
+          else
+            echo "::error::worker_kind inválido: ${KIND}"
+            exit 1
+          fi

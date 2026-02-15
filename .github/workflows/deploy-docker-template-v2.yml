@@ -1,26 +1,132 @@
-name: Deploy Docker Project (vars/secrets only)
+name: Deploy Docker Project Template v2
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        required: true
+        type: string
+      PROJECT_NAME:
+        required: true
+        type: string
+      SSH_USER:
+        required: true
+        type: string
+      SSH_HOST:
+        required: true
+        type: string
+      SSH_KNOWN_HOSTS:
+        required: false
+        type: string
+        default: ""
+      REQUIRE_SSH_KNOWN_HOSTS:
+        required: false
+        type: boolean
+        default: false
+      SSH_REMOTE_PORT:
+        required: false
+        type: number
+        default: 22
+      DOCKER_IMAGE:
+        required: true
+        type: string
+      CONTAINER_NAME:
+        required: false
+        type: string
+        default: ""
+      REGISTRY:
+        required: false
+        type: string
+        default: docker.io
+      IMAGE_NAMESPACE:
+        required: false
+        type: string
+        default: ""
+      HOST_PORT:
+        required: true
+        type: number
+      PORT:
+        required: false
+        type: number
+        default: 80
+      NODE_VERSION:
+        required: false
+        type: string
+        default: "22"
+      PACKAGE_MANAGER:
+        required: false
+        type: string
+        default: "yarn"
+      INSTALL_CMD:
+        required: false
+        type: string
+        default: "yarn install --immutable"
+      BUILD_CMD:
+        required: false
+        type: string
+        default: "yarn build"
+      VERSION_CMD:
+        required: false
+        type: string
+        default: "node -p \"require('./package.json').version\""
+      CACHE_DEPENDENCY_PATH:
+        required: false
+        type: string
+        default: ""
+      DOCKER_PLATFORM:
+        required: false
+        type: string
+        default: linux/amd64
+      DOCKER_BUILD_ARGS:
+        required: false
+        type: string
+        default: ""
+      IMAGE_RETENTION_COUNT:
+        required: false
+        type: number
+        default: 5
+      REMOTE_DOCKER_LOGIN:
+        required: false
+        type: boolean
+        default: true
+      HEALTHCHECK_URL:
+        required: false
+        type: string
+        default: ""
+      HEALTHCHECK_RETRIES:
+        required: false
+        type: number
+        default: 12
+      HEALTHCHECK_DELAY:
+        required: false
+        type: number
+        default: 5
+      PRUNE_RUNNER:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      PEM_KEY:
+        required: true
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
 
 jobs:
   deploy:
-    name: "🚀 Deploy ${{
-      vars.PROJECT_NAME
-    }} (${{ vars.ENVIRONMENT }})"
+    name: "🚀 Deploy ${{ inputs.PROJECT_NAME }} (${{ inputs.ENVIRONMENT }})"
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     concurrency:
-      group: deploy-docker-${{ vars.PROJECT_NAME }}-${{ vars.ENVIRONMENT }}
+      group: deploy-docker-${{ inputs.PROJECT_NAME }}-${{ inputs.ENVIRONMENT }}
       cancel-in-progress: true
 
     permissions:
       contents: read
 
-    # Se você NÃO usa Environment do GitHub, pode remover essa linha.
-    # Se usa, essa linha depende de vars.ENVIRONMENT (var do repo).
-    environment: ${{ vars.ENVIRONMENT }}
+    environment: ${{ inputs.ENVIRONMENT }}
 
     defaults:
       run:
@@ -31,62 +137,55 @@ jobs:
       image_ref: ${{ steps.image_metadata.outputs.image_ref }}
 
     env:
-      # Básico (VARS)
-      PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-      ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+      PROJECT_NAME: ${{ inputs.PROJECT_NAME }}
+      ENVIRONMENT: ${{ inputs.ENVIRONMENT }}
 
-      # Credenciais/registry (VARS)
-      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ vars.DOCKER_PASSWORD }}
-      REGISTRY: ${{ vars.REGISTRY != '' && vars.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE != '' && vars.IMAGE_NAMESPACE || vars.DOCKER_USERNAME }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
+      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || secrets.DOCKER_USERNAME }}
 
-      # Deploy target (VARS)
-      SSH_USER: ${{ vars.SSH_USER }}
-      SSH_HOST: ${{ vars.SSH_HOST }}
-      SSH_REMOTE_PORT: ${{ vars.SSH_REMOTE_PORT != '' && vars.SSH_REMOTE_PORT || '22' }}
+      SSH_USER: ${{ inputs.SSH_USER }}
+      SSH_HOST: ${{ inputs.SSH_HOST }}
+      SSH_REMOTE_PORT: ${{ inputs.SSH_REMOTE_PORT }}
+      SSH_KNOWN_HOSTS: ${{ inputs.SSH_KNOWN_HOSTS }}
+      REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.REQUIRE_SSH_KNOWN_HOSTS && 'true' || 'false' }}
 
-      # App/container (VARS)
-      DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
-      CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE }}
+      CONTAINER_NAME: ${{ inputs.CONTAINER_NAME }}
 
-      # Portas (VARS)
-      HOST_PORT: ${{ vars.HOST_PORT }}
-      PORT: ${{ vars.PORT }}
+      HOST_PORT: ${{ inputs.HOST_PORT }}
+      PORT: ${{ inputs.PORT }}
 
-      # Build (VARS com defaults)
-      NODE_VERSION: ${{ vars.NODE_VERSION != '' && vars.NODE_VERSION || '22' }}
-      PACKAGE_MANAGER: ${{ vars.PACKAGE_MANAGER != '' && vars.PACKAGE_MANAGER || 'yarn' }}
-      INSTALL_CMD: ${{ vars.INSTALL_CMD != '' && vars.INSTALL_CMD || 'yarn install --immutable' }}
-      BUILD_CMD: ${{ vars.BUILD_CMD != '' && vars.BUILD_CMD || 'yarn build' }}
-      VERSION_CMD: ${{ vars.VERSION_CMD != '' && vars.VERSION_CMD || 'node -p "require(\"./package.json\").version"' }}
-      CACHE_DEPENDENCY_PATH: ${{ vars.CACHE_DEPENDENCY_PATH }}
+      NODE_VERSION: ${{ inputs.NODE_VERSION }}
+      PACKAGE_MANAGER: ${{ inputs.PACKAGE_MANAGER }}
+      INSTALL_CMD: ${{ inputs.INSTALL_CMD }}
+      BUILD_CMD: ${{ inputs.BUILD_CMD }}
+      VERSION_CMD: ${{ inputs.VERSION_CMD }}
+      CACHE_DEPENDENCY_PATH: ${{ inputs.CACHE_DEPENDENCY_PATH }}
 
-      # Docker build (VARS com defaults)
-      DOCKER_PLATFORM: ${{ vars.DOCKER_PLATFORM != '' && vars.DOCKER_PLATFORM || 'linux/amd64' }}
-      DOCKER_BUILD_ARGS: ${{ vars.DOCKER_BUILD_ARGS }}
+      DOCKER_PLATFORM: ${{ inputs.DOCKER_PLATFORM }}
+      DOCKER_BUILD_ARGS: ${{ inputs.DOCKER_BUILD_ARGS }}
 
-      # Healthcheck/retention (VARS com defaults)
-      IMAGE_RETENTION_COUNT: ${{ vars.IMAGE_RETENTION_COUNT != '' && vars.IMAGE_RETENTION_COUNT || '5' }}
-      REMOTE_DOCKER_LOGIN: ${{ vars.REMOTE_DOCKER_LOGIN != '' && vars.REMOTE_DOCKER_LOGIN || 'true' }}
-      HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
-      HEALTHCHECK_RETRIES: ${{ vars.HEALTHCHECK_RETRIES != '' && vars.HEALTHCHECK_RETRIES || '12' }}
-      HEALTHCHECK_DELAY: ${{ vars.HEALTHCHECK_DELAY != '' && vars.HEALTHCHECK_DELAY || '5' }}
+      IMAGE_RETENTION_COUNT: ${{ inputs.IMAGE_RETENTION_COUNT }}
+      REMOTE_DOCKER_LOGIN: ${{ inputs.REMOTE_DOCKER_LOGIN && 'true' || 'false' }}
+      HEALTHCHECK_URL: ${{ inputs.HEALTHCHECK_URL }}
+      HEALTHCHECK_RETRIES: ${{ inputs.HEALTHCHECK_RETRIES }}
+      HEALTHCHECK_DELAY: ${{ inputs.HEALTHCHECK_DELAY }}
 
-      # Runner cleanup (VARS com default)
-      PRUNE_RUNNER: ${{ vars.PRUNE_RUNNER != '' && vars.PRUNE_RUNNER || 'true' }}
+      PRUNE_RUNNER: ${{ inputs.PRUNE_RUNNER && 'true' || 'false' }}
 
     steps:
       - name: "✅ Validação prévia (obrigatórios)"
         run: |
           set -euo pipefail
 
-          req_vars=(PROJECT_NAME ENVIRONMENT DOCKER_IMAGE SSH_USER SSH_HOST DOCKER_USERNAME DOCKER_PASSWORD HOST_PORT)
+          req_vars=(PROJECT_NAME ENVIRONMENT DOCKER_IMAGE SSH_USER SSH_HOST DOCKER_USERNAME DOCKER_PASSWORD HOST_PORT IMAGE_NAMESPACE)
 
           for k in "${req_vars[@]}"; do
             v="${!k:-}"
             if [ -z "${v}" ]; then
-              echo "::error::Var obrigatória ausente: ${k}"
+              echo "::error::Valor obrigatório ausente: ${k}"
               exit 1
             fi
           done
@@ -94,11 +193,6 @@ jobs:
           if [ -z "${{ secrets.PEM_KEY }}" ]; then
             echo "::error::Secret obrigatório ausente: PEM_KEY"
             exit 1
-          fi
-
-          # default: PORT (porta do container)
-          if [ -z "${PORT:-}" ]; then
-            PORT="80"
           fi
 
           if ! echo "${HOST_PORT}" | grep -Eq '^[0-9]+$'; then
@@ -120,7 +214,20 @@ jobs:
             exit 1
           fi
 
-          echo "PORT=${PORT}" >> "$GITHUB_ENV"
+          if ! echo "${HEALTHCHECK_RETRIES}" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::HEALTHCHECK_RETRIES deve ser inteiro > 0"
+            exit 1
+          fi
+
+          if ! echo "${HEALTHCHECK_DELAY}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::HEALTHCHECK_DELAY deve ser inteiro >= 0"
+            exit 1
+          fi
+
+          if [ "${REQUIRE_SSH_KNOWN_HOSTS}" = "true" ] && [ -z "${SSH_KNOWN_HOSTS}" ]; then
+            echo "::error::REQUIRE_SSH_KNOWN_HOSTS=true exige SSH_KNOWN_HOSTS preenchido."
+            exit 1
+          fi
 
       - name: "🛒 Checkout"
         uses: actions/checkout@v6
@@ -140,7 +247,7 @@ jobs:
           cache: ${{ env.PACKAGE_MANAGER }}
           cache-dependency-path: ${{ env.CACHE_DEPENDENCY_PATH }}
 
-      - name: "🔎 Debug: o que vai pro container (vars em claro)"
+      - name: "🔎 Debug: ENV_* que irão para o container"
         env:
           VARS_JSON: ${{ toJSON(vars) }}
           SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -152,14 +259,11 @@ jobs:
 
           const out = {};
           const src = {};
-          const norm = (k) => k.startsWith('ENV_') ? k.slice(4) : k;
-          const ignored = new Set(['SSH_KNOWN_HOSTS']);
 
           for (const [k, v] of Object.entries(vars)) {
-            if (v == null) continue;
-            const kk = norm(k);
+            if (!k.startsWith('ENV_') || v == null) continue;
+            const kk = k.slice(4);
             if (!kk) continue;
-            if (ignored.has(kk)) continue;
             out[kk] = String(v);
             src[kk] = 'var(' + k + ')';
           }
@@ -168,27 +272,23 @@ jobs:
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
             if (!kk) continue;
-            if (ignored.has(kk)) continue;
             out[kk] = String(v);
             src[kk] = 'secret(' + k + ')';
           }
 
           const keys = Object.keys(out).sort();
           console.log('--- ENV efetivas (container) ---');
-          if (!keys.length) console.log('(nenhuma env encontrada)');
+          if (!keys.length) console.log('(nenhuma env ENV_* encontrada)');
           for (const k of keys) {
             const from = src[k] || '?';
             const val = from.startsWith('secret(') ? '*** (secret)' : JSON.stringify(out[k]);
             console.log(k + ' = ' + val + '  <= ' + from);
           }
           console.log('-------------------------------');
-
-          const hostPort = out.HOST_PORT;
-          const port = out.PORT || '80';
-          console.log('PORT MAP: -p ' + hostPort + ':' + port);
+          console.log('PORT MAP: -p ' + process.env.HOST_PORT + ':' + process.env.PORT);
           NODE
 
-      - name: "🧾 Gerar .runtime.env (vars: tudo | secrets: só ENV_*)"
+      - name: "🧾 Gerar .runtime.env (somente ENV_*)"
         env:
           VARS_JSON: ${{ toJSON(vars) }}
           SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -201,14 +301,11 @@ jobs:
           const secrets = JSON.parse(process.env.SECRETS_JSON || '{}');
 
           const out = {};
-          const norm = (k) => k.startsWith('ENV_') ? k.slice(4) : k;
-          const ignored = new Set(['SSH_KNOWN_HOSTS']);
 
           for (const [k, v] of Object.entries(vars)) {
-            if (v == null) continue;
-            const kk = norm(k);
+            if (!k.startsWith('ENV_') || v == null) continue;
+            const kk = k.slice(4);
             if (!kk) continue;
-            if (ignored.has(kk)) continue;
             out[kk] = String(v);
           }
 
@@ -216,17 +313,15 @@ jobs:
             if (!k.startsWith('ENV_') || v == null) continue;
             const kk = k.slice(4);
             if (!kk) continue;
-            if (ignored.has(kk)) continue;
             out[kk] = String(v);
           }
 
-          if (!('PORT' in out) || String(out.PORT).trim() === '') out.PORT = '80';
+          if (!('PORT' in out) || String(out.PORT).trim() === '') out.PORT = process.env.PORT || '80';
 
           const safe = {};
           const skipped = [];
           for (const [k, v] of Object.entries(out)) {
             if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
-            // docker --env-file rejeita valores com byte NUL e quebra em valores multilinha.
             if (/[\u0000\r\n]/.test(v)) {
               skipped.push(k);
               continue;
@@ -238,7 +333,7 @@ jobs:
             console.log('Ignoradas no .runtime.env (valor inválido para --env-file): ' + skipped.sort().join(', '));
           }
 
-          const content = Object.keys(safe).sort().map(k => k + '=' + safe[k]).join('\n');
+          const content = Object.keys(safe).sort().map((k) => k + '=' + safe[k]).join('\n');
           fs.writeFileSync('.runtime.env', content ? content + '\n' : '');
           NODE
           chmod 600 .runtime.env
@@ -275,7 +370,14 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          ssh-keyscan -T 10 -H -p "${SSH_REMOTE_PORT}" "${SSH_HOST}" >> ~/.ssh/known_hosts
+          if [ -n "${SSH_KNOWN_HOSTS}" ]; then
+            printf '%s\n' "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          fi
+
+          if [ "${REQUIRE_SSH_KNOWN_HOSTS}" != "true" ]; then
+            ssh-keyscan -T 10 -H -p "${SSH_REMOTE_PORT}" "${SSH_HOST}" >> ~/.ssh/known_hosts
+          fi
+
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 

@@ -1,0 +1,53 @@
+name: worker-v2-development
+
+on:
+  pull_request:
+    branches:
+      - development
+    paths:
+      - "apps/worker/**"
+      - ".github/workflows/worker-development.yml"
+  push:
+    branches:
+      - development
+    paths:
+      - "apps/worker/**"
+      - ".github/workflows/worker-development.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+concurrency:
+  group: worker-v2-development-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker_dev:
+    environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
+    uses: aviait/deploy-templates/.github/workflows/v2-worker.yml@main
+    with:
+      environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
+      working_directory: apps/worker
+      node_version: ${{ vars.WORKER_NODE_VERSION || '20' }}
+      package_manager: ${{ vars.WORKER_PACKAGE_MANAGER || 'pnpm' }}
+      pnpm_version: ${{ vars.WORKER_PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.WORKER_CACHE_DEPENDENCY_PATH || 'apps/worker/pnpm-lock.yaml' }}
+      lint_cmd: ${{ vars.WORKER_LINT_CMD || 'npm run lint' }}
+      typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'npm run typecheck' }}
+      test_cmd: ${{ vars.WORKER_TEST_CMD || 'npm test -- --ci' }}
+      dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
+      image_name: ${{ vars.WORKER_IMAGE_NAME || format('{0}/worker', github.repository) }}
+      semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+      enable_release: false
+      deploy_on_tag_only: false
+      inject_all_github_vars: ${{ vars.WORKER_INJECT_ALL_GITHUB_VARS != 'false' }}
+      github_vars_prefix: ${{ vars.WORKER_GITHUB_VARS_PREFIX }}
+      github_vars_exclude: ${{ vars.WORKER_GITHUB_VARS_EXCLUDE }}
+    secrets:
+      PEM_KEY: ${{ secrets.PEM_KEY }}
+      DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+      DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+      WORKER_RUN_ENVS_FILE: ${{ secrets.WORKER_RUN_ENVS_FILE }}

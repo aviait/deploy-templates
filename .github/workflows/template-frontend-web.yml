@@ -1,0 +1,389 @@
+name: Template - Frontend Web CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      build_cmd:
+        required: false
+        type: string
+        default: "npm run build"
+      build_output_dir:
+        required: false
+        type: string
+        default: "dist"
+      artifact_name:
+        required: false
+        type: string
+        default: "frontend-web-build"
+      aws_region:
+        required: false
+        type: string
+        default: "us-east-1"
+      aws_role_arn_stage:
+        required: true
+        type: string
+      aws_role_arn_prod:
+        required: true
+        type: string
+      s3_bucket_stage:
+        required: true
+        type: string
+      s3_bucket_prod:
+        required: true
+        type: string
+      cloudfront_distribution_id_stage:
+        required: false
+        type: string
+        default: ""
+      cloudfront_distribution_id_prod:
+        required: false
+        type: string
+        default: ""
+      smoke_url_stage:
+        required: true
+        type: string
+      smoke_url_prod:
+        required: true
+        type: string
+      smoke_retries:
+        required: false
+        type: number
+        default: 10
+      smoke_delay_seconds:
+        required: false
+        type: number
+        default: 5
+
+jobs:
+  quality:
+    name: quality
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Lint
+        run: ${{ inputs.lint_cmd }}
+
+      - name: Typecheck
+        run: ${{ inputs.typecheck_cmd }}
+
+      - name: Tests
+        run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Build production artifacts
+        run: ${{ inputs.build_cmd }}
+
+      - name: Pack build artifact
+        run: |
+          set -euo pipefail
+          test -d "${{ inputs.build_output_dir }}"
+          tar -czf "$RUNNER_TEMP/frontend-build.tgz" "${{ inputs.build_output_dir }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/frontend-build.tgz
+          if-no-files-found: error
+
+  security:
+    name: security
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/frontend-build.tgz
+
+  deploy_stage:
+    name: deploy-stage
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: stage
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Unpack build artifact
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/frontend-dist"
+          tar -xzf "$RUNNER_TEMP/frontend-build.tgz" -C "$RUNNER_TEMP/frontend-dist"
+
+      - name: Configure AWS credentials (stage)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.aws_role_arn_stage }}
+
+      - name: Deploy to S3 (stage)
+        run: |
+          set -euo pipefail
+          aws s3 sync "$RUNNER_TEMP/frontend-dist/${{ inputs.build_output_dir }}/" "s3://${{ inputs.s3_bucket_stage }}" --delete
+
+      - name: Invalidate CloudFront (stage)
+        if: ${{ inputs.cloudfront_distribution_id_stage != '' }}
+        run: |
+          set -euo pipefail
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ inputs.cloudfront_distribution_id_stage }}" \
+            --paths "/*"
+
+      - name: Smoke check (stage)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 "${{ inputs.smoke_retries }}"); do
+            if curl -fsSL --max-time 10 "${{ inputs.smoke_url_stage }}" >/dev/null; then
+              exit 0
+            fi
+            sleep "${{ inputs.smoke_delay_seconds }}"
+          done
+          echo "::error::Stage smoke check failed"
+          exit 1
+
+  deploy_prod:
+    name: deploy-prod
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Unpack build artifact
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/frontend-dist"
+          tar -xzf "$RUNNER_TEMP/frontend-build.tgz" -C "$RUNNER_TEMP/frontend-dist"
+
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.aws_role_arn_prod }}
+
+      - name: Deploy to S3 (prod)
+        run: |
+          set -euo pipefail
+          aws s3 sync "$RUNNER_TEMP/frontend-dist/${{ inputs.build_output_dir }}/" "s3://${{ inputs.s3_bucket_prod }}" --delete
+
+      - name: Invalidate CloudFront (prod)
+        if: ${{ inputs.cloudfront_distribution_id_prod != '' }}
+        run: |
+          set -euo pipefail
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ inputs.cloudfront_distribution_id_prod }}" \
+            --paths "/*"
+
+      - name: Smoke check (prod)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 "${{ inputs.smoke_retries }}"); do
+            if curl -fsSL --max-time 10 "${{ inputs.smoke_url_prod }}" >/dev/null; then
+              exit 0
+            fi
+            sleep "${{ inputs.smoke_delay_seconds }}"
+          done
+          echo "::error::Prod smoke check failed"
+          exit 1

@@ -1,0 +1,22 @@
+name: Worker Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  worker:
+    uses: aviait/deploy-templates/.github/workflows/template-worker-jobs.yml@main
+    with:
+      image_name: my-org/my-worker
+      worker_kind: deployment
+      k8s_namespace_stage: stage
+      k8s_namespace_prod: prod
+      k8s_workload_name: queue-worker
+      k8s_container_name: worker
+      queue_config_map_stage: worker-stage-config
+      queue_config_map_prod: worker-prod-config
+    secrets: inherit

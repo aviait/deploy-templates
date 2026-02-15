@@ -1,0 +1,495 @@
+name: Template - Backend API CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      node_version:
+        required: false
+        type: string
+        default: "20"
+      package_manager:
+        required: false
+        type: string
+        default: "npm"
+      pnpm_version:
+        required: false
+        type: string
+        default: "9"
+      cache_dependency_path:
+        required: false
+        type: string
+        default: ""
+      lint_cmd:
+        required: false
+        type: string
+        default: "npm run lint"
+      typecheck_cmd:
+        required: false
+        type: string
+        default: "npm run typecheck"
+      test_cmd:
+        required: false
+        type: string
+        default: "npm test -- --ci"
+      build_cmd:
+        required: false
+        type: string
+        default: "npm run build"
+      migration_cmd:
+        required: false
+        type: string
+        default: "npm run migrate:deploy"
+      migration_timeout_seconds:
+        required: false
+        type: number
+        default: 600
+      dockerfile:
+        required: false
+        type: string
+        default: "Dockerfile"
+      image_name:
+        required: true
+        type: string
+      k8s_namespace_stage:
+        required: true
+        type: string
+      k8s_namespace_prod:
+        required: true
+        type: string
+      k8s_deployment_name:
+        required: true
+        type: string
+      k8s_container_name:
+        required: true
+        type: string
+      healthcheck_url_stage:
+        required: true
+        type: string
+      healthcheck_url_prod:
+        required: true
+        type: string
+      healthcheck_retries:
+        required: false
+        type: number
+        default: 12
+      healthcheck_delay_seconds:
+        required: false
+        type: number
+        default: 5
+    secrets:
+      KUBE_CONFIG_STAGE:
+        required: true
+      KUBE_CONFIG_PROD:
+        required: true
+
+jobs:
+  quality:
+    name: quality
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - run: ${{ inputs.lint_cmd }}
+      - run: ${{ inputs.typecheck_cmd }}
+      - run: ${{ inputs.test_cmd }}
+
+  build:
+    name: build
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      stage_image: ${{ steps.meta.outputs.stage_image }}
+      release_image: ${{ steps.meta.outputs.release_image }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Docker metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ inputs.image_name }}"
+          SHA_TAG="sha-${GITHUB_SHA::12}"
+          STAGE_IMAGE="${IMAGE}:${SHA_TAG}"
+          RELEASE_TAG=""
+          RELEASE_IMAGE=""
+          PUSH_IMAGE="false"
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_REF}" == refs/tags/v* ]]; then
+            PUSH_IMAGE="true"
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+            RELEASE_IMAGE="${IMAGE}:${RELEASE_TAG}"
+          fi
+
+          {
+            echo "stage_image=${STAGE_IMAGE}"
+            echo "release_image=${RELEASE_IMAGE}"
+            echo "release_tag=${RELEASE_TAG}"
+            echo "push_image=${PUSH_IMAGE}"
+            echo "tags<<TAGLIST"
+            echo "${STAGE_IMAGE}"
+            echo "TAGLIST"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build API image (push main/tags)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.working_directory }}
+          file: ${{ inputs.working_directory }}/${{ inputs.dockerfile }}
+          push: ${{ steps.meta.outputs.push_image == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=backend-api
+          cache-to: type=gha,mode=max,scope=backend-api
+
+      - name: Save build metadata
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/backend-image.json" <<JSON
+          {
+            "stage_image": "${{ steps.meta.outputs.stage_image }}",
+            "release_image": "${{ steps.meta.outputs.release_image }}",
+            "release_tag": "${{ steps.meta.outputs.release_tag }}",
+            "git_sha": "${GITHUB_SHA}"
+          }
+          JSON
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-image-metadata
+          path: ${{ runner.temp }}/backend-image.json
+
+  security:
+    name: security
+    if: ${{ startsWith(github.ref, 'refs/pull/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::Unsupported package_manager"; exit 1 ;;
+          esac
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: CodeQL Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  release:
+    name: release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      release_image: ${{ steps.tag_image.outputs.release_image }}
+    steps:
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag release image
+        id: tag_image
+        run: |
+          set -euo pipefail
+          STAGE_IMAGE="${{ needs.build.outputs.stage_image }}"
+          RELEASE_IMAGE="${{ needs.build.outputs.release_image }}"
+          docker pull "${STAGE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "${RELEASE_IMAGE}"
+          docker tag "${STAGE_IMAGE}" "ghcr.io/${{ inputs.image_name }}:latest"
+          docker push "${RELEASE_IMAGE}"
+          docker push "ghcr.io/${{ inputs.image_name }}:latest"
+          echo "release_image=${RELEASE_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-metadata
+          path: ${{ runner.temp }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/backend-image.json
+
+  migrate_stage:
+    name: migrate-stage
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: stage
+    steps:
+      - name: Configure kubeconfig (stage)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_STAGE }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Run migration job (stage)
+        run: |
+          set -euo pipefail
+          JOB_NAME="api-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          kubectl -n "${{ inputs.k8s_namespace_stage }}" create job "${JOB_NAME}" \
+            --image="${{ needs.build.outputs.stage_image }}" \
+            -- /bin/sh -lc "${{ inputs.migration_cmd }}"
+          kubectl -n "${{ inputs.k8s_namespace_stage }}" wait \
+            --for=condition=complete "job/${JOB_NAME}" \
+            --timeout="${{ inputs.migration_timeout_seconds }}s"
+          kubectl -n "${{ inputs.k8s_namespace_stage }}" logs "job/${JOB_NAME}" --tail=200 || true
+          kubectl -n "${{ inputs.k8s_namespace_stage }}" delete job "${JOB_NAME}" --ignore-not-found=true
+
+  deploy_stage:
+    name: deploy-stage
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [migrate_stage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: stage
+    steps:
+      - name: Configure kubeconfig (stage)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_STAGE }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy and rollback on failure (stage)
+        run: |
+          set -euo pipefail
+          DEPLOY="${{ inputs.k8s_deployment_name }}"
+          NS="${{ inputs.k8s_namespace_stage }}"
+          CONTAINER="${{ inputs.k8s_container_name }}"
+          IMAGE="${{ needs.build.outputs.stage_image }}"
+
+          kubectl -n "${NS}" set image "deployment/${DEPLOY}" "${CONTAINER}=${IMAGE}"
+          if ! kubectl -n "${NS}" rollout status "deployment/${DEPLOY}" --timeout=180s; then
+            kubectl -n "${NS}" rollout undo "deployment/${DEPLOY}" || true
+            kubectl -n "${NS}" rollout status "deployment/${DEPLOY}" --timeout=180s || true
+            echo "::error::Stage deploy failed. Rollback executed."
+            exit 1
+          fi
+
+      - name: Healthcheck (stage)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 "${{ inputs.healthcheck_retries }}"); do
+            if curl -fsSL --max-time 10 "${{ inputs.healthcheck_url_stage }}" >/dev/null; then
+              exit 0
+            fi
+            sleep "${{ inputs.healthcheck_delay_seconds }}"
+          done
+          echo "::error::Stage healthcheck failed"
+          exit 1
+
+  migrate_prod:
+    name: migrate-prod
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Configure kubeconfig (prod)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PROD }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Run migration job (prod)
+        run: |
+          set -euo pipefail
+          JOB_NAME="api-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          kubectl -n "${{ inputs.k8s_namespace_prod }}" create job "${JOB_NAME}" \
+            --image="${{ needs.release.outputs.release_image }}" \
+            -- /bin/sh -lc "${{ inputs.migration_cmd }}"
+          kubectl -n "${{ inputs.k8s_namespace_prod }}" wait \
+            --for=condition=complete "job/${JOB_NAME}" \
+            --timeout="${{ inputs.migration_timeout_seconds }}s"
+          kubectl -n "${{ inputs.k8s_namespace_prod }}" logs "job/${JOB_NAME}" --tail=200 || true
+          kubectl -n "${{ inputs.k8s_namespace_prod }}" delete job "${JOB_NAME}" --ignore-not-found=true
+
+  deploy_prod:
+    name: deploy-prod
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [migrate_prod]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Configure kubeconfig (prod)
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PROD }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${KUBE_CONFIG}" | grep -q 'apiVersion:'; then
+            printf '%s\n' "${KUBE_CONFIG}" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "${KUBE_CONFIG}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy and rollback on failure (prod)
+        run: |
+          set -euo pipefail
+          DEPLOY="${{ inputs.k8s_deployment_name }}"
+          NS="${{ inputs.k8s_namespace_prod }}"
+          CONTAINER="${{ inputs.k8s_container_name }}"
+          IMAGE="${{ needs.release.outputs.release_image }}"
+
+          kubectl -n "${NS}" set image "deployment/${DEPLOY}" "${CONTAINER}=${IMAGE}"
+          if ! kubectl -n "${NS}" rollout status "deployment/${DEPLOY}" --timeout=240s; then
+            kubectl -n "${NS}" rollout undo "deployment/${DEPLOY}" || true
+            kubectl -n "${NS}" rollout status "deployment/${DEPLOY}" --timeout=240s || true
+            echo "::error::Prod deploy failed. Rollback executed."
+            exit 1
+          fi
+
+      - name: Healthcheck (prod)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 "${{ inputs.healthcheck_retries }}"); do
+            if curl -fsSL --max-time 10 "${{ inputs.healthcheck_url_prod }}" >/dev/null; then
+              exit 0
+            fi
+            sleep "${{ inputs.healthcheck_delay_seconds }}"
+          done
+          echo "::error::Prod healthcheck failed"
+          exit 1

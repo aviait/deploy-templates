@@ -50,6 +50,10 @@ on:
         required: false
         type: string
         default: ""
+      REQUIRE_SSH_KNOWN_HOSTS:
+        required: false
+        type: boolean
+        default: false
       SSH_REMOTE_PORT:
         required: false
         type: number
@@ -115,6 +119,11 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ inputs.REQUIRE_SSH_KNOWN_HOSTS }}" = "true" ] && [ -z "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
+            echo "::error::REQUIRE_SSH_KNOWN_HOSTS=true exige SSH_KNOWN_HOSTS preenchido."
+            exit 1
+          fi
+
       - name: 🛠️ Instalar dependências do projeto
         run: ${{ inputs.INSTALL_CMD }}
 
@@ -141,10 +150,15 @@ jobs:
       - name: 🔐 Registrar host SSH em known_hosts
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           if [ -n "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
             printf '%s\n' "${{ inputs.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           fi
-          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+
+          if [ "${{ inputs.REQUIRE_SSH_KNOWN_HOSTS }}" != "true" ]; then
+            ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+          fi
+
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 

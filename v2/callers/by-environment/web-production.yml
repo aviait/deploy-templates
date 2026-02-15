@@ -1,0 +1,49 @@
+name: web-v2-production
+
+on:
+  pull_request:
+    branches:
+      - production
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-production.yml"
+  push:
+    branches:
+      - production
+    tags:
+      - "v*"
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: web-v2-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web_prd:
+    environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+    uses: aviait/deploy-templates/.github/workflows/v2-web.yml@main
+    with:
+      environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+      working_directory: apps/web
+      node_version: ${{ vars.WEB_NODE_VERSION || '20' }}
+      package_manager: ${{ vars.WEB_PACKAGE_MANAGER || 'pnpm' }}
+      pnpm_version: ${{ vars.WEB_PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.WEB_CACHE_DEPENDENCY_PATH || 'apps/web/pnpm-lock.yaml' }}
+      lint_cmd: ${{ vars.WEB_LINT_CMD || 'npm run lint' }}
+      typecheck_cmd: ${{ vars.WEB_TYPECHECK_CMD || 'npm run typecheck' }}
+      test_cmd: ${{ vars.WEB_TEST_CMD || 'npm test -- --ci' }}
+      build_cmd: ${{ vars.WEB_BUILD_CMD || 'npm run build' }}
+      build_output_dir: ${{ vars.WEB_BUILD_OUTPUT_DIR || 'dist' }}
+      artifact_name: ${{ vars.WEB_ARTIFACT_NAME || 'web-build' }}
+      semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+      enable_release: true
+      deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
+    secrets:
+      PEM_KEY: ${{ secrets.PEM_KEY }}

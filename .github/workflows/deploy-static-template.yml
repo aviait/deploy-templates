@@ -1,4 +1,4 @@
-name: Deploy Static Project Template
+name: "[DEPRECATED] Deploy Static Project Template"
 
 on:
   workflow_call:
@@ -18,6 +18,10 @@ on:
       SSH_HOST:
         required: true
         type: string
+      SSH_REMOTE_PORT:
+        required: false
+        type: number
+        default: 22
     secrets:
       PEM_KEY:
         required: true
@@ -28,8 +32,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: ⚠️ Aviso de depreciação
+        run: |
+          echo "::warning::Template legado. Migre para .github/workflows/deploy-static-template-v2.yml."
+          {
+            echo "## Aviso de depreciação"
+            echo "Este workflow é legado e será removido em versão futura."
+            echo "Migre para: \`.github/workflows/deploy-static-template-v2.yml\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🛒 Checkout código
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: 🛠️ Instalar dependências do projeto
         run: yarn install
@@ -45,6 +58,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rsync openssh-client
 
+      - name: 🔐 Registrar host SSH em known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+          sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
       - name: 🔑 Configurar chave SSH privada
         run: |
           echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
@@ -52,12 +73,12 @@ jobs:
 
       - name: 🔍 Criar diretório remoto se não existir
         run: |
-          ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} "sudo mkdir -p '${{ inputs.REMOTE_DIR }}' && sudo chown ${{ inputs.SSH_USER }}:${{ inputs.SSH_USER }} '${{ inputs.REMOTE_DIR }}'"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} "sudo mkdir -p '${{ inputs.REMOTE_DIR }}' && sudo chown ${{ inputs.SSH_USER }}:${{ inputs.SSH_USER }} '${{ inputs.REMOTE_DIR }}'"
 
       - name: 🚚 Enviar arquivos estáticos via rsync
         run: |
           rsync -avz --delete --progress --stats ./build/ \
-            -e "ssh -o StrictHostKeyChecking=no -i ./deploy-key.pem" \
+            -e "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem" \
             ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }}:"${{ inputs.REMOTE_DIR }}"
 
       - name: 🧹 Apagar chave privada

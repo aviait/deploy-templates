@@ -43,6 +43,10 @@ on:
         required: false
         type: string
         default: ""
+      REQUIRE_SSH_KNOWN_HOSTS:
+        required: false
+        type: boolean
+        default: false
       WORKER_NAME:
         required: true
         type: string
@@ -113,9 +117,9 @@ on:
       PEM_KEY:
         required: true
       DOCKER_USERNAME:
-        required: false
+        required: true
       DOCKER_PASSWORD:
-        required: false
+        required: true
 
 jobs:
   deploy:
@@ -135,10 +139,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       image_ref: ${{ steps.image_metadata.outputs.image_ref }}
     env:
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_USERNAME || inputs.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD != '' && secrets.DOCKER_PASSWORD || inputs.DOCKER_PASSWORD }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_USERNAME || inputs.DOCKER_USERNAME) }}
+      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || secrets.DOCKER_USERNAME }}
 
     steps:
       - name: 🛒 Checkout código
@@ -171,18 +175,22 @@ jobs:
             exit 1
           fi
 
+          if [ -n "${{ inputs.DOCKER_USERNAME }}" ] || [ -n "${{ inputs.DOCKER_PASSWORD }}" ]; then
+            echo "::warning::Inputs DOCKER_USERNAME/DOCKER_PASSWORD estão deprecated. Use secrets."
+          fi
+
           if [ -z "${{ inputs.INSTALL_CMD }}" ] || [ -z "${{ inputs.BUILD_CMD }}" ]; then
             echo "::error::INSTALL_CMD e BUILD_CMD não podem ser vazios."
             exit 1
           fi
 
           if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
-            echo "::error::Informe DOCKER_USERNAME/DOCKER_PASSWORD via secrets ou via inputs."
+            echo "::error::Secrets DOCKER_USERNAME/DOCKER_PASSWORD são obrigatórios."
             exit 1
           fi
 
           if [ -z "${IMAGE_NAMESPACE}" ]; then
-            echo "::error::IMAGE_NAMESPACE ficou vazio. Informe IMAGE_NAMESPACE ou DOCKER_USERNAME."
+            echo "::error::IMAGE_NAMESPACE ficou vazio. Informe IMAGE_NAMESPACE ou defina secret DOCKER_USERNAME."
             exit 1
           fi
 
@@ -201,6 +209,11 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ inputs.REQUIRE_SSH_KNOWN_HOSTS }}" = "true" ] && [ -z "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
+            echo "::error::REQUIRE_SSH_KNOWN_HOSTS=true exige SSH_KNOWN_HOSTS preenchido."
+            exit 1
+          fi
+
       - name: 🛠️ Instalar dependências do projeto
         run: ${{ inputs.INSTALL_CMD }}
 
@@ -210,10 +223,15 @@ jobs:
       - name: 🔐 Registrar host SSH em known_hosts
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           if [ -n "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
             printf '%s\n' "${{ inputs.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           fi
-          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+
+          if [ "${{ inputs.REQUIRE_SSH_KNOWN_HOSTS }}" != "true" ]; then
+            ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+          fi
+
           sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
@@ -314,8 +332,10 @@ jobs:
             set -euo pipefail
 
             WORKER_RUN_ENVS=$(printf '%s' "${WORKER_RUN_ENVS_B64}" | base64 -d)
-            WORKER_ENV_OPTS="${WORKER_RUN_ENVS}"
             TMP_ENV_FILE=""
+            DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${WORKER_NAME}")
+            WORKER_RUN_ENVS_ARRAY=()
+            WORKER_EXTRA_ARGS_ARRAY=()
 
             cleanup_tmp_env_file() {
               if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
@@ -327,7 +347,16 @@ jobs:
             if [ "${WORKER_ENV_MODE}" = "file" ]; then
               TMP_ENV_FILE=$(mktemp)
               printf '%s' "${WORKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
-              WORKER_ENV_OPTS="--env-file ${TMP_ENV_FILE} ${WORKER_ENV_OPTS}"
+              DOCKER_RUN_ARGS+=(--env-file "${TMP_ENV_FILE}")
+            fi
+
+            if [ -n "${WORKER_RUN_ENVS}" ]; then
+              read -r -a WORKER_RUN_ENVS_ARRAY <<< "${WORKER_RUN_ENVS}"
+              DOCKER_RUN_ARGS+=("${WORKER_RUN_ENVS_ARRAY[@]}")
+            fi
+
+            if [ -n "${WORKER_EXTRA_ARGS}" ]; then
+              read -r -a WORKER_EXTRA_ARGS_ARRAY <<< "${WORKER_EXTRA_ARGS}"
             fi
 
             PREVIOUS_IMAGE_ID=$(docker inspect -f '{{.Image}}' "${WORKER_NAME}" 2>/dev/null || true)
@@ -341,16 +370,10 @@ jobs:
             docker stop "${WORKER_NAME}" || true
             docker rm "${WORKER_NAME}" || true
 
-            if ! docker run -d --restart unless-stopped --name "${WORKER_NAME}" \
-              ${WORKER_ENV_OPTS} \
-              "${IMAGE_REF}" \
-              ${WORKER_EXTRA_ARGS}; then
+            if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}" "${WORKER_EXTRA_ARGS_ARRAY[@]}"; then
               echo "Falha ao subir nova versão do worker; tentando rollback..."
               if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                docker run -d --restart unless-stopped --name "${WORKER_NAME}" \
-                  ${WORKER_ENV_OPTS} \
-                  "${PREVIOUS_IMAGE_ID}" \
-                  ${WORKER_EXTRA_ARGS} || true
+                docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
               fi
               exit 1
             fi
@@ -365,10 +388,7 @@ jobs:
                 docker stop "${WORKER_NAME}" || true
                 docker rm "${WORKER_NAME}" || true
                 if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                  docker run -d --restart unless-stopped --name "${WORKER_NAME}" \
-                    ${WORKER_ENV_OPTS} \
-                    "${PREVIOUS_IMAGE_ID}" \
-                    ${WORKER_EXTRA_ARGS} || true
+                  docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
                 fi
                 exit 1
               fi

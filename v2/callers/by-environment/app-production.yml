@@ -1,0 +1,72 @@
+name: app-v2-production
+
+on:
+  pull_request:
+    branches:
+      - production
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/app-production.yml"
+  push:
+    branches:
+      - production
+    tags:
+      - "v*"
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/app-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: app-v2-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  app_prd:
+    environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+    uses: aviait/deploy-templates/.github/workflows/v2-app.yml@main
+    with:
+      environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+      working_directory: apps/mobile
+      node_version: ${{ vars.APP_NODE_VERSION || '20' }}
+      package_manager: ${{ vars.APP_PACKAGE_MANAGER || 'pnpm' }}
+      pnpm_version: ${{ vars.APP_PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.APP_CACHE_DEPENDENCY_PATH || 'apps/mobile/pnpm-lock.yaml' }}
+      lint_cmd: ${{ vars.APP_LINT_CMD || 'npm run lint' }}
+      typecheck_cmd: ${{ vars.APP_TYPECHECK_CMD || 'npm run typecheck' }}
+      test_cmd: ${{ vars.APP_TEST_CMD || 'npm test -- --ci' }}
+      build_android: ${{ vars.APP_BUILD_ANDROID != 'false' }}
+      build_ios: ${{ vars.APP_BUILD_IOS != 'false' }}
+      android_working_directory: ${{ vars.APP_ANDROID_DIR || 'android' }}
+      ios_working_directory: ${{ vars.APP_IOS_DIR || 'ios' }}
+      android_build_cmd: ${{ vars.APP_ANDROID_BUILD_CMD || './gradlew :app:bundleRelease' }}
+      ios_build_cmd: ${{ vars.APP_IOS_BUILD_CMD || 'xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -archivePath build/Runner.xcarchive archive' }}
+      ios_export_cmd: ${{ vars.APP_IOS_EXPORT_CMD || 'xcodebuild -exportArchive -archivePath build/Runner.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist' }}
+      firebase_groups: ${{ vars.FIREBASE_GROUPS || 'prd' }}
+      deploy_via_fastlane: ${{ vars.DEPLOY_VIA_FASTLANE != 'false' }}
+      fastlane_working_directory: ${{ vars.APP_FASTLANE_DIR || '.' }}
+      bundle_install_cmd: ${{ vars.APP_BUNDLE_INSTALL_CMD || 'bundle install' }}
+      fastlane_android_lane: ${{ vars.APP_FASTLANE_ANDROID_LANE || 'android release' }}
+      fastlane_ios_lane: ${{ vars.APP_FASTLANE_IOS_LANE || 'ios release' }}
+      semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+      enable_release: true
+      deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
+    secrets:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+      IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+      IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
+      IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}

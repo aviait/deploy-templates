@@ -1,4 +1,4 @@
-name: Deploy Docker Project Template
+name: "[DEPRECATED] Deploy Docker Project Template"
 
 on:
   workflow_call:
@@ -15,6 +15,10 @@ on:
       SSH_HOST:
         required: true
         type: string
+      SSH_KNOWN_HOSTS:
+        required: false
+        type: string
+        default: ""
       DOCKER_IMAGE:
         required: true
         type: string
@@ -41,8 +45,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: ⚠️ Aviso de depreciação
+        run: |
+          echo "::warning::Template legado. Migre para .github/workflows/deploy-docker-template-v2.yml."
+          {
+            echo "## Aviso de depreciação"
+            echo "Este workflow é legado e será removido em versão futura."
+            echo "Migre para: \`.github/workflows/deploy-docker-template-v2.yml\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🛒 Checkout código
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: 🛠️ Instalar dependências do projeto
         run: yarn install
@@ -54,6 +67,17 @@ jobs:
         run: |
           echo "${{ secrets.PEM_KEY }}" > ./deploy-key.pem
           chmod 600 ./deploy-key.pem
+
+      - name: 🔐 Registrar host SSH em known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "${{ inputs.SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ inputs.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          fi
+          ssh-keyscan -H -p ${{ inputs.SSH_REMOTE_PORT }} ${{ inputs.SSH_HOST }} >> ~/.ssh/known_hosts
+          sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: 🔢 Pegar versão do projeto
         id: version
@@ -72,7 +96,7 @@ jobs:
 
       - name: 🚀 Atualizar container no servidor
         run: |
-          ssh -o StrictHostKeyChecking=no -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p ${{ inputs.SSH_REMOTE_PORT }} -i ./deploy-key.pem ${{ inputs.SSH_USER }}@${{ inputs.SSH_HOST }} << EOF
             docker pull "${{ inputs.DOCKER_USERNAME }}/${{ inputs.DOCKER_IMAGE }}:${{ env.VERSION }}"
             docker stop ${{ inputs.DOCKER_IMAGE }} || true
             docker rm ${{ inputs.DOCKER_IMAGE }} || true

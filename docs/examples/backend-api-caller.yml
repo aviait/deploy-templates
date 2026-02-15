@@ -1,0 +1,22 @@
+name: Backend API Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  backend:
+    uses: aviait/deploy-templates/.github/workflows/template-backend-api.yml@main
+    with:
+      image_name: my-org/my-api
+      k8s_namespace_stage: stage
+      k8s_namespace_prod: prod
+      k8s_deployment_name: api
+      k8s_container_name: api
+      healthcheck_url_stage: https://stage.example.com/health
+      healthcheck_url_prod: https://api.example.com/health
+      migration_cmd: npm run migrate:deploy
+    secrets: inherit

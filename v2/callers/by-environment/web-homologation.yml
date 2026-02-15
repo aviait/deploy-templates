@@ -1,0 +1,47 @@
+name: web-v2-homologation
+
+on:
+  pull_request:
+    branches:
+      - homologation
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-homologation.yml"
+  push:
+    branches:
+      - homologation
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-homologation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: web-v2-homologation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web_hml:
+    environment: ${{ vars.PIPELINE_ENV_HML || 'hml' }}
+    uses: aviait/deploy-templates/.github/workflows/v2-web.yml@main
+    with:
+      environment: ${{ vars.PIPELINE_ENV_HML || 'hml' }}
+      working_directory: apps/web
+      node_version: ${{ vars.WEB_NODE_VERSION || '20' }}
+      package_manager: ${{ vars.WEB_PACKAGE_MANAGER || 'pnpm' }}
+      pnpm_version: ${{ vars.WEB_PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.WEB_CACHE_DEPENDENCY_PATH || 'apps/web/pnpm-lock.yaml' }}
+      lint_cmd: ${{ vars.WEB_LINT_CMD || 'npm run lint' }}
+      typecheck_cmd: ${{ vars.WEB_TYPECHECK_CMD || 'npm run typecheck' }}
+      test_cmd: ${{ vars.WEB_TEST_CMD || 'npm test -- --ci' }}
+      build_cmd: ${{ vars.WEB_BUILD_CMD || 'npm run build' }}
+      build_output_dir: ${{ vars.WEB_BUILD_OUTPUT_DIR || 'dist' }}
+      artifact_name: ${{ vars.WEB_ARTIFACT_NAME || 'web-build' }}
+      semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+      enable_release: false
+      deploy_on_tag_only: false
+    secrets:
+      PEM_KEY: ${{ secrets.PEM_KEY }}

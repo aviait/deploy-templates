@@ -1,0 +1,55 @@
+name: worker-v2-production
+
+on:
+  pull_request:
+    branches:
+      - production
+    paths:
+      - "apps/worker/**"
+      - ".github/workflows/worker-production.yml"
+  push:
+    branches:
+      - production
+    tags:
+      - "v*"
+    paths:
+      - "apps/worker/**"
+      - ".github/workflows/worker-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+concurrency:
+  group: worker-v2-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  worker_prd:
+    environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+    uses: aviait/deploy-templates/.github/workflows/v2-worker.yml@main
+    with:
+      environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
+      working_directory: apps/worker
+      node_version: ${{ vars.WORKER_NODE_VERSION || '20' }}
+      package_manager: ${{ vars.WORKER_PACKAGE_MANAGER || 'pnpm' }}
+      pnpm_version: ${{ vars.WORKER_PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.WORKER_CACHE_DEPENDENCY_PATH || 'apps/worker/pnpm-lock.yaml' }}
+      lint_cmd: ${{ vars.WORKER_LINT_CMD || 'npm run lint' }}
+      typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'npm run typecheck' }}
+      test_cmd: ${{ vars.WORKER_TEST_CMD || 'npm test -- --ci' }}
+      dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
+      image_name: ${{ vars.WORKER_IMAGE_NAME || format('{0}/worker', github.repository) }}
+      semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+      enable_release: true
+      deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
+      inject_all_github_vars: ${{ vars.WORKER_INJECT_ALL_GITHUB_VARS != 'false' }}
+      github_vars_prefix: ${{ vars.WORKER_GITHUB_VARS_PREFIX }}
+      github_vars_exclude: ${{ vars.WORKER_GITHUB_VARS_EXCLUDE }}
+    secrets:
+      PEM_KEY: ${{ secrets.PEM_KEY }}
+      DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+      DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+      WORKER_RUN_ENVS_FILE: ${{ secrets.WORKER_RUN_ENVS_FILE }}
