@@ -1228,38 +1228,6 @@ jobs:
               inline_env_lines="$(printf '%s\n' "${RUN_ENVS}" | grep -vc '^[[:space:]]*$' || true)"
             fi
 
-            sanitize_docker_args() {
-              local args=("$@")
-              local out=()
-              local i=0
-              while [ "${i}" -lt "${#args[@]}" ]; do
-                local a="${args[$i]}"
-                case "${a}" in
-                  --env|-e)
-                    local kv="${args[$((i+1))]:-}"
-                    local key="${kv%%=*}"
-                    if [ -z "${kv}" ]; then
-                      out+=("${a}" "***")
-                    elif printf '%s' "${kv}" | grep -q '='; then
-                      out+=("${a}" "${key}=***")
-                    else
-                      out+=("${a}" "${kv}")
-                    fi
-                    i=$((i+2))
-                    ;;
-                  --env-file)
-                    out+=("${a}" "<env-file>")
-                    i=$((i+2))
-                    ;;
-                  *)
-                    out+=("${a}")
-                    i=$((i+1))
-                    ;;
-                esac
-              done
-              printf '%q ' "${out[@]}"
-            }
-
             echo "docker run plan (sanitized):"
             echo "- image: ${IMAGE_REF}"
             echo "- name: ${SERVICE_NAME}"
@@ -1267,7 +1235,34 @@ jobs:
             echo "- env-file: $([ "${env_file_lines}" -gt 0 ] && echo "yes (lines=${env_file_lines})" || echo "no")"
             echo "- inline env: $([ "${inline_env_lines}" -gt 0 ] && echo "yes (lines=${inline_env_lines})" || echo "no")"
             echo "- extra args provided: $([ -n "${EXTRA_ARGS}" ] && echo "yes" || echo "no")"
-            echo "docker run (sanitized): docker run $(sanitize_docker_args "${DOCKER_RUN_ARGS[@]}") ${IMAGE_REF}"
+            preview="docker run -d --restart unless-stopped --name '${SERVICE_NAME}' -p '${HOST_PORT}:${CONTAINER_PORT}'"
+            if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
+              preview="${preview} --env-file <env-file>"
+            fi
+            if [ -n "${RUN_ENVS}" ]; then
+              while IFS= read -r line; do
+                line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                [ -z "${line}" ] && continue
+                case "${line}" in
+                  \#*) continue ;;
+                esac
+
+                if printf '%s' "${line}" | grep -Eq '^(--env|-e)[[:space:]]+'; then
+                  kv="${line#* }"
+                else
+                  kv="${line}"
+                fi
+                key="${kv%%=*}"
+                if [ -n "${key}" ]; then
+                  preview="${preview} --env '${key}=***'"
+                fi
+              done <<< "${RUN_ENVS}"
+            fi
+            if [ -n "${EXTRA_ARGS}" ]; then
+              preview="${preview} [extra args redacted]"
+            fi
+            preview="${preview} '${IMAGE_REF}'"
+            echo "docker run (redacted): ${preview}"
 
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
