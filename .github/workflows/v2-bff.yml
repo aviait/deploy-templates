@@ -1375,7 +1375,7 @@ jobs:
                 break
               fi
 
-              if [ "${container_state}" = "restarting" ] || [ "${container_state}" = "exited" ] || [ "${container_state}" = "dead" ]; then
+              if [ "${container_state}" = "exited" ] || [ "${container_state}" = "dead" ]; then
                 echo "Container entrou em estado crítico durante startup (state=${container_state}); rollback."
                 docker ps -a --filter "name=${SERVICE_NAME}" || true
                 docker logs --tail 200 "${SERVICE_NAME}" 2>/dev/null || true
@@ -1385,6 +1385,10 @@ jobs:
                   docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" || true
                 fi
                 exit 1
+              fi
+
+              if [ "${container_state}" = "restarting" ]; then
+                echo "Container em restarting durante startup (tentativa ${attempt}/${STARTUP_CHECK_RETRIES}); aguardando ${STARTUP_CHECK_DELAY}s"
               fi
 
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
@@ -1409,6 +1413,12 @@ jobs:
               while [ "${attempt}" -le "${HEALTHCHECK_RETRIES}" ]; do
                 container_state="$(docker inspect -f '{{.State.Status}}' "${SERVICE_NAME}" 2>/dev/null || true)"
                 if [ "${container_state}" != "running" ]; then
+                  if [ "${container_state}" = "restarting" ]; then
+                    echo "Container em restarting durante healthcheck (tentativa ${attempt}/${HEALTHCHECK_RETRIES}); aguardando ${HEALTHCHECK_DELAY}s"
+                    attempt=$((attempt+1))
+                    sleep "${HEALTHCHECK_DELAY}"
+                    continue
+                  fi
                   echo "Container saiu de running durante healthcheck (state=${container_state:-desconhecido})."
                   break
                 fi
