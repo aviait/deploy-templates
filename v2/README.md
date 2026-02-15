@@ -44,3 +44,11 @@ Se omitido, o template usa automaticamente o nome do repositório.
 - PR validate: `pre-deploy-config` valida variáveis/segredos mínimos de deploy antes do merge.
 - Produção: usar `environment protection` com aprovação manual no environment `prd`.
 - Cada pipeline publica resumo em `GITHUB_STEP_SUMMARY`, incluindo tabela de resultados e caminho de execução da pipeline.
+
+## Auto-tag (opcional)
+Para automatizar o fluxo de `prd` (tag `vX.Y.Z`) ao merge em `production`, use o exemplo:
+- `v2/callers/examples/auto-tag-production.yml`
+
+Requer:
+- `secrets.RELEASE_PAT` (PAT com `contents: write`; necessario para push de tag disparar workflows)
+- `vars.RELEASE_PACKAGE_JSON_PATH` (opcional, default `package.json`)

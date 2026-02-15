@@ -941,6 +941,14 @@ jobs:
           STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
           RELEASE_IMAGE: ${{ needs.release.outputs.release_image }}
           IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+          IN_REGISTRY: ${{ inputs.registry }}
+          IN_IMAGE_NAME: ${{ inputs.image_name }}
+          IN_IMAGE_NAMESPACE: ${{ inputs.image_namespace }}
+          IN_SEMVER_PREFIX: ${{ inputs.semver_prefix }}
+          IN_WORKING_DIRECTORY: ${{ inputs.working_directory }}
+          GIT_REF: ${{ github.ref }}
+          GIT_SHA: ${{ github.sha }}
+          GIT_REPOSITORY: ${{ github.repository }}
           SSH_USER: ${{ steps.resolve.outputs.ssh_user }}
           SSH_HOST: ${{ steps.resolve.outputs.ssh_host }}
           SSH_PORT: ${{ steps.resolve.outputs.ssh_remote_port }}
@@ -964,13 +972,123 @@ jobs:
         run: |
           set -euo pipefail
 
+          compute_images() {
+            local ref="${GIT_REF}"
+            local sha="${GIT_SHA}"
+            local repo="${GIT_REPOSITORY}"
+            local registry_input="${IN_REGISTRY}"
+            local image_input="${IN_IMAGE_NAME}"
+            local image_namespace="${IN_IMAGE_NAMESPACE}"
+            local semver_prefix="${IN_SEMVER_PREFIX}"
+            local working_directory="${IN_WORKING_DIRECTORY}"
+
+            if [ -z "${registry_input}" ]; then
+              registry_input="ghcr.io"
+            fi
+            local registry="${registry_input,,}"
+
+            if [ -z "${image_input}" ]; then
+              if [ "${registry}" = "ghcr.io" ]; then
+                image_input="${repo}/bff"
+              else
+                image_input="${repo}"
+              fi
+            fi
+
+            if [ -z "${registry}" ]; then
+              echo "::error::registry vazio"
+              exit 1
+            fi
+            if printf '%s' "${registry}" | grep -Eq '://|/|[[:space:]]'; then
+              echo "::error::registry invalido: '${registry}'. Use apenas o host (ex.: ghcr.io, docker.io, registry.exemplo.com:5000), sem 'https://' e sem '/'."
+              exit 1
+            fi
+
+            if printf '%s' "${image_input}" | grep -Eq '://|[[:space:]]'; then
+              echo "::error::image_name invalido: '${image_input}'. Nao use URL e nao use espacos."
+              exit 1
+            fi
+            if printf '%s' "${image_input}" | grep -Eq '[@:]'; then
+              echo "::error::image_name nao deve conter tag/digest (':' ou '@'). Informe somente o repositorio (ex.: 'aviait/tei-bff' ou '${repo}/bff')."
+              exit 1
+            fi
+            local first_segment="${image_input%%/*}"
+            if [ "${first_segment}" != "${image_input}" ]; then
+              if printf '%s' "${first_segment}" | grep -Eq '[\\.:]' || [ "${first_segment}" = "localhost" ]; then
+                echo "::error::image_name nao deve incluir o registry host (ex.: 'ghcr.io/...'). Use o input registry para isso."
+                exit 1
+              fi
+            fi
+
+            if [ -n "${image_namespace}" ] && printf '%s' "${image_namespace}" | grep -Eq '[:/@]|[[:space:]]'; then
+              echo "::error::image_namespace invalido: '${image_namespace}'. Use apenas o namespace (ex.: aviait), sem '/', ':', '@' e sem espacos."
+              exit 1
+            fi
+
+            local image_path="${image_input}"
+            if ! printf '%s' "${image_path}" | grep -q '/'; then
+              if [ -n "${image_namespace}" ]; then
+                image_path="${image_namespace}/${image_path}"
+              else
+                image_path="${repo%%/*}/${image_path}"
+              fi
+            fi
+
+            if [ "${registry}" = "docker.io" ]; then
+              local slash_count
+              slash_count="$(printf '%s' "${image_path}" | awk -F/ '{print NF-1}')"
+              if [ "${slash_count}" -ne 1 ]; then
+                echo "::error::Para Docker Hub (docker.io), a imagem deve ser no formato 'namespace/repo'. Recebido: '${image_path}'."
+                echo "::error::Sugestao: defina image_name como 'namespace/repo' (ex.: 'aviait/tei-bff') e opcionalmente use image_namespace."
+                exit 1
+              fi
+            fi
+
+            local image="${registry}/${image_path}"
+            image="${image,,}"
+            local sha_tag="sha-${sha::12}"
+            COMPUTED_STAGE_IMAGE="${image}:${sha_tag}"
+            COMPUTED_RELEASE_IMAGE=""
+
+            if [[ "${ref}" == refs/tags/${semver_prefix}* ]]; then
+              local git_tag="${ref#refs/tags/}"
+                local pkg_json="${working_directory}/package.json"
+                local pkg_version=""
+                if [ -f "${pkg_json}" ]; then
+                  pkg_version="$(python3 -c "import json,sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('version','')).strip())" "${pkg_json}" 2>/dev/null || true)"
+                fi
+
+              local release_tag="${git_tag}"
+              if [ -n "${pkg_version}" ]; then
+                if [ "${git_tag}" != "${semver_prefix}${pkg_version}" ] && [ "${git_tag}" != "${pkg_version}" ]; then
+                  echo "::error::Tag '${git_tag}' nao corresponde a versao do package.json ('${pkg_version}'). Esperado '${semver_prefix}${pkg_version}'."
+                  exit 1
+                fi
+                release_tag="${pkg_version}"
+              fi
+
+              COMPUTED_RELEASE_IMAGE="${image}:${release_tag}"
+            fi
+          }
+
+          if [ -z "${STAGE_IMAGE}" ] || { [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; }; then
+            echo "::warning::Imagem nao resolvida via outputs (stage/release). Recomputando a partir de inputs + SHA."
+            compute_images
+            if [ -z "${STAGE_IMAGE}" ]; then
+              STAGE_IMAGE="${COMPUTED_STAGE_IMAGE}"
+            fi
+            if [ -z "${RELEASE_IMAGE}" ] && [ -n "${COMPUTED_RELEASE_IMAGE}" ]; then
+              RELEASE_IMAGE="${COMPUTED_RELEASE_IMAGE}"
+            fi
+          fi
+
           TARGET_IMAGE="${STAGE_IMAGE}"
           if [ "${IS_TAG}" = "true" ] && [ -n "${RELEASE_IMAGE}" ]; then
             TARGET_IMAGE="${RELEASE_IMAGE}"
           fi
 
           if [ -z "${TARGET_IMAGE}" ]; then
-            echo "::error::TARGET_IMAGE vazio (verifique build/release outputs)"
+            echo "::error::TARGET_IMAGE vazio (verifique build/release outputs e inputs de imagem)"
             exit 1
           fi
           if printf '%s' "${TARGET_IMAGE}" | grep -Eq '://|[[:space:]]'; then

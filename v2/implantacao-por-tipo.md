@@ -156,6 +156,9 @@ Comportamento:
 2. Promoção para `homologation` após validação funcional.
 3. Release de `production` por tag semântica (`vX.Y.Z`) e aprovação manual no environment `prd`.
 
+Opcional (automação de tag):
+- Se quiser gerar a tag automaticamente ao merge/push em `production`, use o exemplo `v2/callers/examples/auto-tag-production.yml` no repo consumidor.
+
 ## Observações importantes
 - `app_name` é opcional em todos os templates; fallback automático para nome do repositório.
 - Em BFF/Worker, prefira injeção de `vars` por environment para reduzir mapeamentos fixos no caller.

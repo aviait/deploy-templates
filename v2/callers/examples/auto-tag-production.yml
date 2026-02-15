@@ -1,0 +1,94 @@
+name: auto-tag-production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-tag-production-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tag:
+    name: create tag from package.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (with tags)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        env:
+          PACKAGE_JSON_PATH: ${{ vars.RELEASE_PACKAGE_JSON_PATH != '' && vars.RELEASE_PACKAGE_JSON_PATH || 'package.json' }}
+          SEMVER_PREFIX: ${{ vars.PIPELINE_SEMVER_PREFIX != '' && vars.PIPELINE_SEMVER_PREFIX || 'v' }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "${PACKAGE_JSON_PATH}" ]; then
+            echo "::error::Arquivo nao encontrado: ${PACKAGE_JSON_PATH}"
+            exit 1
+          fi
+
+          VERSION="$(python3 -c "import json,sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('version','')).strip())" "${PACKAGE_JSON_PATH}")"
+          if [ -z "${VERSION}" ]; then
+            echo "::error::package.json version vazio em ${PACKAGE_JSON_PATH}"
+            exit 1
+          fi
+
+          TAG="${SEMVER_PREFIX}${VERSION}"
+
+          # Basic sanity check; adjust if you allow prereleases/build metadata.
+          if ! echo "${TAG}" | grep -Eq "^${SEMVER_PREFIX}[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$"; then
+            echo "::warning::Tag '${TAG}' nao parece semver padrao (vX.Y.Z)."
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag (idempotent)
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_PAT:-}" ]; then
+            echo "::error::Secret RELEASE_PAT obrigatorio para push de tag (e para disparar workflows em push de tag)."
+            exit 1
+          fi
+
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            TAG_SHA="$(git rev-list -n 1 "${TAG}")"
+            if [ "${TAG_SHA}" = "${GITHUB_SHA}" ]; then
+              echo "::notice::Tag ${TAG} ja existe neste commit. Nada a fazer."
+              exit 0
+            fi
+            echo "::error::Tag ${TAG} ja existe apontando para outro commit (${TAG_SHA}). Bumpe a versao do package.json."
+            exit 1
+          fi
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git tag -a "${TAG}" -m "${TAG}"
+          git remote set-url origin "https://x-access-token:${RELEASE_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "${TAG}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## auto-tag-production"
+            echo "- ref: \`${{ github.ref }}\`"
+            echo "- tag: \`${{ steps.ver.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
