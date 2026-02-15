@@ -1369,17 +1369,24 @@ jobs:
             docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${SERVICE_NAME}" 2>/dev/null || true
 
             attempt=1
-            stable_running_checks=0
-            required_stable_running_checks=2
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
-              if docker ps --filter "name=${SERVICE_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
-                stable_running_checks=$((stable_running_checks+1))
-                if [ "${stable_running_checks}" -ge "${required_stable_running_checks}" ]; then
-                  break
-                fi
-              else
-                stable_running_checks=0
+              container_state="$(docker inspect -f '{{.State.Status}}' "${SERVICE_NAME}" 2>/dev/null || true)"
+              if [ "${container_state}" = "running" ]; then
+                break
               fi
+
+              if [ "${container_state}" = "restarting" ] || [ "${container_state}" = "exited" ] || [ "${container_state}" = "dead" ]; then
+                echo "Container entrou em estado crítico durante startup (state=${container_state}); rollback."
+                docker ps -a --filter "name=${SERVICE_NAME}" || true
+                docker logs --tail 200 "${SERVICE_NAME}" 2>/dev/null || true
+                docker stop "${SERVICE_NAME}" || true
+                docker rm "${SERVICE_NAME}" || true
+                if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
+                  docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" || true
+                fi
+                exit 1
+              fi
+
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
                 echo "Container não ficou running; rollback."
                 docker ps -a --filter "name=${SERVICE_NAME}" || true
@@ -1391,6 +1398,7 @@ jobs:
                 fi
                 exit 1
               fi
+
               attempt=$((attempt+1))
               sleep "${STARTUP_CHECK_DELAY}"
             done
