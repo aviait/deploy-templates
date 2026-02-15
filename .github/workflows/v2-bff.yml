@@ -1304,6 +1304,45 @@ jobs:
               inline_env_lines="$(printf '%s\n' "${RUN_ENVS}" | grep -vc '^[[:space:]]*$' || true)"
             fi
 
+            inline_env_keys=""
+            if [ -n "${RUN_ENVS}" ]; then
+              inline_env_keys="$(printf '%s\n' "${RUN_ENVS}" | awk '
+                /^[[:space:]]*$/ { next }
+                /^[[:space:]]*#/ { next }
+                {
+                  line=$0
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                  if (line ~ /^(--env|-e)[[:space:]]+/) {
+                    sub(/^(--env|-e)[[:space:]]+/, "", line)
+                  }
+                  split(line, kv, "=")
+                  key=kv[1]
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+                  if (key != "") {
+                    print key
+                  }
+                }
+              ' | sort -u | paste -sd ', ' -)"
+            fi
+
+            env_file_keys=""
+            if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
+              env_file_keys="$(awk '
+                /^[[:space:]]*$/ { next }
+                /^[[:space:]]*#/ { next }
+                {
+                  line=$0
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                  split(line, kv, "=")
+                  key=kv[1]
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+                  if (key != "") {
+                    print key
+                  }
+                }
+              ' "${TMP_ENV_FILE}" | sort -u | paste -sd ', ' -)"
+            fi
+
             echo "docker run plan (sanitized):"
             echo "- image: ${IMAGE_REF}"
             echo "- name: ${SERVICE_NAME}"
@@ -1311,6 +1350,8 @@ jobs:
             echo "- env-file: $([ "${env_file_lines}" -gt 0 ] && echo "yes (lines=${env_file_lines})" || echo "no")"
             echo "- inline env: $([ "${inline_env_lines}" -gt 0 ] && echo "yes (lines=${inline_env_lines})" || echo "no")"
             echo "- extra args provided: $([ -n "${EXTRA_ARGS}" ] && echo "yes" || echo "no")"
+            echo "- env keys (inline): ${inline_env_keys:-<none>}"
+            echo "- env keys (env-file): ${env_file_keys:-<none>}"
             preview="docker run -d --restart unless-stopped --name '${SERVICE_NAME}' -p '${HOST_PORT}:${CONTAINER_PORT}'"
             if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
               preview="${preview} --env-file <env-file>"
@@ -1367,6 +1408,8 @@ jobs:
             echo "Container status (after docker run):"
             docker ps -a --filter "name=${SERVICE_NAME}" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' || true
             docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${SERVICE_NAME}" 2>/dev/null || true
+            container_env_keys="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${SERVICE_NAME}" 2>/dev/null | cut -d= -f1 | sort -u | paste -sd ', ' - || true)"
+            echo "Container env keys (inspect): ${container_env_keys:-<unable to read>}"
 
             attempt=1
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
