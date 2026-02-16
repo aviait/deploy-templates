@@ -161,6 +161,7 @@ Comportamento:
 
 Opcional (automação de tag):
 - Se quiser gerar a tag automaticamente ao merge/push em `production`, use o exemplo `v2/callers/examples/auto-tag-production.yml` no repo consumidor.
+- O exemplo dispara somente apos `bff-v2-production` concluir com sucesso em `production`.
 
 ## Observações importantes
 - `app_name` é opcional em todos os templates; fallback automático para nome do repositório.

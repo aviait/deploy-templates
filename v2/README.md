@@ -50,5 +50,8 @@ Para automatizar o fluxo de `prd` (tag `vX.Y.Z`) ao merge em `production`, use o
 - `v2/callers/examples/auto-tag-production.yml`
 
 Requer:
-- `secrets.RELEASE_PAT` (PAT com `contents: write`; necessario para push de tag disparar workflows)
+- `permissions.contents: write` no workflow (o exemplo usa `secrets.GITHUB_TOKEN`)
 - `vars.RELEASE_PACKAGE_JSON_PATH` (opcional, default `package.json`)
+
+Comportamento do exemplo:
+- O auto-tag so roda quando o workflow `bff-v2-production` conclui com `success` em `push` da branch `production`.
