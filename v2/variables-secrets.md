@@ -86,8 +86,8 @@ Workflow: `v2-bff.yml`
 | `BFF_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `BFF_IMAGE_NAMESPACE` | vazio | Namespace quando `BFF_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
 | `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
-| `BFF_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do container (`docker run`). |
-| `BFF_GITHUB_VARS_PREFIX` | vazio | Injeta apenas vars com esse prefixo (filtro). |
+| `BFF_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
+| `BFF_GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `BFF_GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
 
 Notas de release (tags):
@@ -115,7 +115,7 @@ Notas de release (tags):
 | `STARTUP_CHECK_RETRIES` | nao | `6` | Tentativas para validar que o container subiu. |
 | `STARTUP_CHECK_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de startup check. |
 | `PRUNE_RUNNER` | nao | `true` | Faz limpeza de docker no runner ao final. |
-| `GITHUB_VARS_PREFIX` | nao | vazio | Mesmo papel de filtro por prefixo (caso nao use caller com `BFF_*`). |
+| `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `GITHUB_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao (caso nao use caller com `BFF_*`). |
 
 ### Segredos de environment
@@ -144,7 +144,7 @@ Workflow: `v2-worker.yml`
 | `WORKER_IMAGE_NAMESPACE` | vazio | Namespace quando `WORKER_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
 | `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
 | `WORKER_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
-| `WORKER_GITHUB_VARS_PREFIX` | vazio | Filtra injecao de vars por prefixo. |
+| `WORKER_GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `WORKER_GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
 
 Notas de release (tags):
@@ -166,7 +166,7 @@ Notas de release (tags):
 | `STARTUP_CHECK_RETRIES` | nao | `6` | Tentativas para confirmar worker rodando. |
 | `STARTUP_CHECK_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de startup check. |
 | `PRUNE_RUNNER` | nao | `true` | Limpeza de docker no runner ao final. |
-| `GITHUB_VARS_PREFIX` | nao | vazio | Filtro de prefixo para injecao de vars (uso direto do workflow). |
+| `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `GITHUB_VARS_EXCLUDE` | nao | vazio | Exclusao de chaves da injecao de vars (uso direto do workflow). |
 
 ### Segredos de environment

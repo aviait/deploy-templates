@@ -49,7 +49,6 @@ jobs:
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
       inject_all_github_vars: ${{ vars.WORKER_INJECT_ALL_GITHUB_VARS != 'false' }}
-      github_vars_prefix: ${{ vars.WORKER_GITHUB_VARS_PREFIX }}
       github_vars_exclude: ${{ vars.WORKER_GITHUB_VARS_EXCLUDE }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}

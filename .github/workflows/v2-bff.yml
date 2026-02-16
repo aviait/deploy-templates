@@ -890,7 +890,6 @@ jobs:
         env:
           VARS_JSON: ${{ toJSON(vars) }}
           INJECT_ALL: ${{ steps.resolve.outputs.inject_all_github_vars }}
-          PREFIX: ${{ steps.resolve.outputs.github_vars_prefix }}
           EXCLUDE: ${{ steps.resolve.outputs.github_vars_exclude }}
           PIPELINE_ENV: ${{ inputs.environment }}
         run: |
@@ -900,7 +899,6 @@ jobs:
 
           const vars = JSON.parse(process.env.VARS_JSON || '{}');
           const includeAll = String(process.env.INJECT_ALL || '').toLowerCase() === 'true';
-          const prefix = (process.env.PREFIX || '').trim();
           const rawExclude = (process.env.EXCLUDE || '').trim();
           const patterns = rawExclude
             ? rawExclude.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
@@ -929,7 +927,6 @@ jobs:
           };
 
           const excluded = (key) => patterns.some((p) => matchPattern(key, p));
-          const allowedByPrefix = (key) => !prefix || key.startsWith(prefix);
 
           let lines = [];
           let skippedInvalid = 0;
@@ -939,7 +936,6 @@ jobs:
 
           const addLine = (key, value) => {
             if (excluded(key)) return;
-            if (!allowedByPrefix(key)) return;
             if (!isValidEnvName(key)) {
               skippedInvalid += 1;
               return;
@@ -964,7 +960,6 @@ jobs:
               // Base vars (no suffix) first.
               for (const key of keys) {
                 if (suffixRe.test(key)) continue;
-                if (!allowedByPrefix(key)) continue;
                 if (excluded(key)) continue;
                 if (!isValidEnvName(key)) {
                   skippedInvalid += 1;
@@ -986,7 +981,6 @@ jobs:
                 if (!m) continue;
                 const baseKey = m[1];
                 const suffix = m[2];
-                if (!allowedByPrefix(key)) continue;
                 if (suffix !== envSuffix) {
                   skippedOtherEnvSuffix += 1;
                   continue;
