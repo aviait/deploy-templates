@@ -1387,6 +1387,56 @@ jobs:
             preview="${preview} '${IMAGE_REF}'"
             echo "docker run (redacted): ${preview}"
 
+            is_sensitive_key() {
+              # Conservative redaction. If a key looks like it might be sensitive, do not print its value.
+              # This protects logs even when users store secrets in GitHub "vars" (which is not recommended).
+              local k="${1:-}"
+              k="${k^^}"
+              case "${k}" in
+                *SECRET*|*PASSWORD*|*PASS*|*TOKEN*|*PRIVATE*|*KEY*|*CREDENTIAL*|*CERT*|*COOKIE*|*SESSION*|*AUTH*|*SIGNING*|*SSH_*|*GPG_*|*PGP_*|*P12*|*KEYSTORE*|*MOBILEPROVISION*|*SERVICE_ACCOUNT*|*ACCESS_KEY* )
+                  return 0
+                  ;;
+                *)
+                  return 1
+                  ;;
+              esac
+            }
+
+            redact_value() {
+              local v="${1-}"
+              local len="${#v}"
+              if command -v sha256sum >/dev/null 2>&1; then
+                local h
+                h="$(printf '%s' "${v}" | sha256sum | awk '{print $1}')"
+                printf '<redacted len=%s sha256=%s>' "${len}" "${h}"
+              else
+                printf '<redacted len=%s>' "${len}"
+              fi
+            }
+
+            if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ] && [ "${env_file_lines}" -gt 0 ]; then
+              echo "env-file content (redacted):"
+              while IFS= read -r line || [ -n "${line}" ]; do
+                case "${line}" in
+                  ''|\#*) continue ;;
+                esac
+                if ! printf '%s' "${line}" | grep -q '='; then
+                  continue
+                fi
+                key="${line%%=*}"
+                val="${line#*=}"
+                key="$(printf '%s' "${key}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                if [ -z "${key}" ]; then
+                  continue
+                fi
+                if is_sensitive_key "${key}"; then
+                  printf '%s=%s\n' "${key}" "$(redact_value "${val}")"
+                else
+                  printf '%s=%s\n' "${key}" "${val}"
+                fi
+              done < "${TMP_ENV_FILE}" | sort
+            fi
+
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
@@ -1416,6 +1466,26 @@ jobs:
             docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${SERVICE_NAME}" 2>/dev/null || true
             container_env_keys="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${SERVICE_NAME}" 2>/dev/null | cut -d= -f1 | sort -u | paste -sd ', ' - || true)"
             echo "Container env keys (inspect): ${container_env_keys:-<unable to read>}"
+            if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ] && [ "${env_file_lines}" -gt 0 ]; then
+              inspect_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${SERVICE_NAME}" 2>/dev/null || true)"
+              if [ -n "${inspect_env}" ]; then
+                echo "Container env (inspect, redacted, injected keys):"
+                while IFS= read -r key || [ -n "${key}" ]; do
+                  [ -z "${key}" ] && continue
+                  line="$(printf '%s\n' "${inspect_env}" | grep -m1 "^${key}=" || true)"
+                  val="${line#*=}"
+                  if is_sensitive_key "${key}"; then
+                    printf '%s=%s\n' "${key}" "$(redact_value "${val}")"
+                  else
+                    printf '%s=%s\n' "${key}" "${val}"
+                  fi
+                done < <(awk -F= '
+                  /^[[:space:]]*$/ { next }
+                  /^[[:space:]]*#/ { next }
+                  $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ { print $1 }
+                ' "${TMP_ENV_FILE}" | sort -u) | sort
+              fi
+            fi
 
             attempt=1
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
