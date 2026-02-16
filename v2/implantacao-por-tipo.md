@@ -73,7 +73,7 @@ Secrets mínimos por environment:
 - `DEPLOY_REGISTRY_PASSWORD`
 
 Vars recomendadas:
-- `CONTAINER_PORT` (default 3000).
+- `CONTAINER_PORT` (fixo 80 no template v2).
 - `CONTAINER_NAME` (se não definir, usa `app_name`/repo).
 - `HEALTHCHECK_URL`, `HEALTHCHECK_RETRIES`, `HEALTHCHECK_DELAY_SECONDS`.
 - `BFF_INJECT_ALL_GITHUB_VARS`, `BFF_GITHUB_VARS_EXCLUDE`.

@@ -102,8 +102,8 @@ Notas de release (tags):
 | `SSH_KNOWN_HOSTS` | condicional | - | Host key fixa para conexao segura. |
 | `REQUIRE_SSH_KNOWN_HOSTS` | nao | `false` | Exige pinning explicito de host key. |
 | `CONTAINER_NAME` | nao | `app_name` | Nome do container `docker run`. |
-| `CONTAINER_PORT` | nao | `3000` | Porta interna exposta pelo container. |
-| `HOST_PORT` | sim (deploy) | sem default util (`0`) | Porta publica no host (`-p HOST_PORT:CONTAINER_PORT`). |
+| `CONTAINER_PORT` | nao | `80` (fixo) | Porta interna do container para BFF. No template v2, o deploy sempre mapeia `HOST_PORT` para `80` (`-p HOST_PORT:80`). |
+| `HOST_PORT` | sim (deploy) | sem default util (`0`) | Porta publica no host (`-p HOST_PORT:80`). |
 | `DOCKER_RUN_ENVS` | nao | vazio | Variaveis inline para `docker run` (formato `KEY=VALUE`, multiline). |
 | `DOCKER_EXTRA_ARGS` | nao | vazio | Argumentos extras no `docker run` (volumes, network, labels etc.). |
 | `MIGRATION_CMD` | nao | vazio | Comando executado no host para migration antes/apos swap (conforme script). |

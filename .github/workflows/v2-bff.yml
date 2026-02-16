@@ -65,7 +65,7 @@ on:
       container_port:
         required: false
         type: number
-        default: 0
+        default: 80
       host_port:
         required: false
         type: number
@@ -668,7 +668,8 @@ jobs:
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
             container_name: pickString(process.env.IN_CONTAINER_NAME, vars.CONTAINER_NAME, process.env.IN_APP_NAME),
-            container_port: pickPositiveInt(80, process.env.IN_CONTAINER_PORT, vars.CONTAINER_PORT),
+            // Enforce container port 80 for BFF. The host port is configurable via HOST_PORT.
+            container_port: 80,
             host_port: pickPositiveInt(0, process.env.IN_HOST_PORT, vars.HOST_PORT),
             docker_run_envs: pickString(process.env.IN_DOCKER_RUN_ENVS, vars.DOCKER_RUN_ENVS),
             docker_extra_args: pickString(process.env.IN_DOCKER_EXTRA_ARGS, vars.DOCKER_EXTRA_ARGS),
@@ -820,7 +821,8 @@ jobs:
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
             container_name: pickString(process.env.IN_CONTAINER_NAME, vars.CONTAINER_NAME, process.env.IN_APP_NAME),
-            container_port: pickPositiveInt(80, process.env.IN_CONTAINER_PORT, vars.CONTAINER_PORT),
+            // Enforce container port 80 for BFF. The host port is configurable via HOST_PORT.
+            container_port: 80,
             host_port: pickPositiveInt(0, process.env.IN_HOST_PORT, vars.HOST_PORT),
             docker_run_envs: pickString(process.env.IN_DOCKER_RUN_ENVS, vars.DOCKER_RUN_ENVS),
             docker_extra_args: pickString(process.env.IN_DOCKER_EXTRA_ARGS, vars.DOCKER_EXTRA_ARGS),
