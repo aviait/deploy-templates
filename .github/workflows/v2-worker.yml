@@ -1317,6 +1317,23 @@ jobs:
               esac
             }
 
+            value_looks_sensitive() {
+              local v="${1-}"
+
+              if printf '%s' "${v}" | grep -Eq '^[A-Za-z][A-Za-z0-9+.-]*://[^/@[:space:]]+:[^@[:space:]]+@'; then
+                return 0
+              fi
+              if printf '%s' "${v}" | grep -Eq '^[A-Za-z][A-Za-z0-9+.-]*://[^@[:space:]]+@'; then
+                return 0
+              fi
+
+              if printf '%s' "${v}" | grep -Eq '^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$'; then
+                return 0
+              fi
+
+              return 1
+            }
+
             redact_value() {
               local v="${1-}"
               local len="${#v}"
@@ -1344,7 +1361,7 @@ jobs:
                 if [ -z "${key}" ]; then
                   continue
                 fi
-                if is_sensitive_key "${key}"; then
+                if is_sensitive_key "${key}" || value_looks_sensitive "${val}"; then
                   printf '%s=%s\n' "${key}" "$(redact_value "${val}")"
                 else
                   printf '%s=%s\n' "${key}" "${val}"
@@ -1384,7 +1401,7 @@ jobs:
                   [ -z "${key}" ] && continue
                   line="$(printf '%s\n' "${inspect_env}" | grep -m1 "^${key}=" || true)"
                   val="${line#*=}"
-                  if is_sensitive_key "${key}"; then
+                  if is_sensitive_key "${key}" || value_looks_sensitive "${val}"; then
                     printf '%s=%s\n' "${key}" "$(redact_value "${val}")"
                   else
                     printf '%s=%s\n' "${key}" "${val}"
