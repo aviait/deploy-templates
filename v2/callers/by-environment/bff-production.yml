@@ -44,7 +44,7 @@ jobs:
       dockerfile: ${{ vars.BFF_DOCKERFILE || 'Dockerfile' }}
       registry: ${{ vars.BFF_REGISTRY || 'ghcr.io' }}
       image_namespace: ${{ vars.BFF_IMAGE_NAMESPACE }}
-      image_name: ${{ vars.BFF_IMAGE_NAME || format('{0}/bff', github.repository) }}
+      image_name: ${{ vars.BFF_IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}

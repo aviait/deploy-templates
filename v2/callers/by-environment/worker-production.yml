@@ -44,7 +44,7 @@ jobs:
       dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
       registry: ${{ vars.WORKER_REGISTRY || 'ghcr.io' }}
       image_namespace: ${{ vars.WORKER_IMAGE_NAMESPACE }}
-      image_name: ${{ vars.WORKER_IMAGE_NAME || format('{0}/worker', github.repository) }}
+      image_name: ${{ vars.WORKER_IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
