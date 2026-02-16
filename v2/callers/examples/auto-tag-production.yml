@@ -59,13 +59,13 @@ jobs:
 
       - name: Create and push tag (idempotent)
         env:
-          GIT_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
 
           if [ -z "${GIT_TOKEN:-}" ]; then
-            echo "::error::GIT_TOKEN ausente."
+            echo "::error::GIT_TOKEN ausente. Configure um PAT em secrets.GIT_TOKEN para que o push da tag dispare os workflows de release/deploy."
             exit 1
           fi
 

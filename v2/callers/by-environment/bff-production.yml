@@ -11,7 +11,7 @@ on:
     branches:
       - production
     tags:
-      - "v*"
+      - "*"
     paths:
       - "apps/bff/**"
       - ".github/workflows/bff-production.yml"
@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   bff_prd:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, format('refs/tags/{0}', vars.PIPELINE_SEMVER_PREFIX != '' && vars.PIPELINE_SEMVER_PREFIX || 'v')) }}
     environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
     uses: aviait/deploy-templates/.github/workflows/v2-bff.yml@main
     with:
