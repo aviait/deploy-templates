@@ -59,13 +59,13 @@ jobs:
 
       - name: Create and push tag (idempotent)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
 
-          if [ -z "${GITHUB_TOKEN:-}" ]; then
-            echo "::error::GITHUB_TOKEN ausente."
+          if [ -z "${GIT_TOKEN:-}" ]; then
+            echo "::error::GIT_TOKEN ausente."
             exit 1
           fi
 
@@ -85,7 +85,7 @@ jobs:
           git config user.email "github-actions@github.com"
 
           git tag -a "${TAG}" -m "${TAG}"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote set-url origin "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "${TAG}"
 
       - name: Summary

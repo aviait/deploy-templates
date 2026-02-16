@@ -50,7 +50,7 @@ Para automatizar o fluxo de `prd` (tag `vX.Y.Z`) ao merge em `production`, use o
 - `v2/callers/examples/auto-tag-production.yml`
 
 Requer:
-- `permissions.contents: write` no workflow (o exemplo usa `secrets.GITHUB_TOKEN`)
+- `permissions.contents: write` no workflow (o exemplo usa `secrets.GIT_TOKEN`, com fallback para `github.token`)
 - `vars.RELEASE_PACKAGE_JSON_PATH` (opcional, default `package.json`)
 
 Comportamento do exemplo:

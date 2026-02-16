@@ -20,6 +20,7 @@ Escolha técnica: `GHCR` (integração nativa com GitHub e permissões de pacote
 ## Segredos
 - `KUBE_CONFIG_STAGE`
 - `KUBE_CONFIG_PROD`
+- `GIT_TOKEN` (opcional; se ausente, usa `github.token`)
 
 ## Gates
 - CI completo em PR.

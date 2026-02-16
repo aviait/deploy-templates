@@ -17,7 +17,7 @@
 - Pipeline file: `.github/workflows/template-backend-api.yml`
 - Docs: `docs/backend-api.md`
 - Vars/inputs: `image_name`, `k8s_namespace_stage|prod`, `k8s_deployment_name`, `k8s_container_name`, `migration_cmd`, `healthcheck_url_*`
-- Secrets: `KUBE_CONFIG_STAGE`, `KUBE_CONFIG_PROD`
+- Secrets: `KUBE_CONFIG_STAGE`, `KUBE_CONFIG_PROD`, `GIT_TOKEN` (opcional; fallback `github.token`)
 - Gates: PR->CI, `main`->stage, tag `vX.Y.Z`->release+prod (manual approval)
 - Versionamento: imagem `sha-<commit>` para stage, `vX.Y.Z` + `latest` para release/prod
 - Checklist:

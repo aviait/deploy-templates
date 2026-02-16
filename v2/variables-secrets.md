@@ -17,8 +17,8 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 | `CHECKOUT_TOKEN` | nao | `v2-web.yml`, `v2-bff.yml`, `v2-worker.yml`, `v2-app.yml` | Token alternativo para `actions/checkout` quando o `GITHUB_TOKEN` nao consegue clonar o repo (ex.: orchestrator repo rodando pipeline para outro repo privado, submodules privados, restricoes de permissao). Recomendado: Fine-grained PAT com acesso apenas ao(s) repo(s) necessario(s) e permissao `Contents: Read`. |
 
 Nota (auto-tag):
-- O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GITHUB_TOKEN` (token automatico do GitHub Actions) para criar/push de tag.
-- Se voce precisa que o push da tag dispare outros workflows (`on: push tags`), considere usar PAT dedicado no lugar do `GITHUB_TOKEN` por causa da protecao anti-recursao do GitHub.
+- O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GIT_TOKEN` (com fallback para `github.token`) para criar/push de tag.
+- Se voce precisa que o push da tag dispare outros workflows (`on: push tags`), considere usar PAT dedicado no lugar do `github.token` por causa da protecao anti-recursao do GitHub.
 
 ## Variaveis comuns (usadas pelos callers)
 | Variavel | Tipo | Default | O que faz |

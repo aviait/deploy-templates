@@ -85,6 +85,8 @@ on:
         required: true
       KUBE_CONFIG_PROD:
         required: true
+      GIT_TOKEN:
+        required: false
 
 jobs:
   quality:
@@ -184,7 +186,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GIT_TOKEN || github.token }}
 
       - name: Build API image (push main/tags)
         uses: docker/build-push-action@v6
@@ -271,7 +273,7 @@ jobs:
       - name: Secret scanning (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -301,7 +303,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GIT_TOKEN || github.token }}
 
       - name: Tag release image
         id: tag_image
