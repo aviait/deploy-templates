@@ -78,6 +78,9 @@ Vars recomendadas:
 - `HEALTHCHECK_URL`, `HEALTHCHECK_RETRIES`, `HEALTHCHECK_DELAY_SECONDS`.
 - `BFF_INJECT_ALL_GITHUB_VARS`, `BFF_GITHUB_VARS_EXCLUDE`.
 
+Observacao de resolucao por ambiente (BFF):
+- Para variaveis de deploy/runtime (ex.: `CONTAINER_NAME`, `HOST_PORT`, `HEALTHCHECK_URL`), o template prioriza automaticamente sufixos `*_DEV`, `*_HML`, `*_PRD` conforme o ambiente informado no caller.
+
 Secrets opcionais:
 - `DOCKER_RUN_ENVS_FILE` para enviar env-file multiline.
 

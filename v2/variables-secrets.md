@@ -118,6 +118,9 @@ Notas de release (tags):
 | `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `GITHUB_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao (caso nao use caller com `BFF_*`). |
 
+Nota de resolucao por ambiente (BFF):
+- Para as variaveis de deploy/runtime acima, o template prioriza automaticamente `*_DEV`, `*_HML` ou `*_PRD` conforme o `inputs.environment` (`dev|hml|prd`), e cai para a chave base sem sufixo quando o sufixado nao existir.
+
 ### Segredos de environment
 | Segredo | Obrigatorio | O que faz |
 | --- | --- | --- |
