@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   packages: write
   security-events: write
@@ -27,7 +27,11 @@ concurrency:
 
 jobs:
   bff_dev:
-    environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+      security-events: write
     uses: aviait/deploy-templates/.github/workflows/v2-bff.yml@main
     with:
       environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}

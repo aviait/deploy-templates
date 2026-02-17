@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   security-events: write
 
@@ -26,7 +26,10 @@ concurrency:
 
 jobs:
   web_hml:
-    environment: ${{ vars.PIPELINE_ENV_HML || 'hml' }}
+    permissions:
+      contents: write
+      actions: read
+      security-events: write
     uses: aviait/deploy-templates/.github/workflows/v2-web.yml@main
     with:
       environment: ${{ vars.PIPELINE_ENV_HML || 'hml' }}
