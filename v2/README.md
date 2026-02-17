@@ -51,8 +51,11 @@ Para automatizar o fluxo de `prd` (tag `vX.Y.Z`) ao merge em `production`, use o
 
 Requer:
 - `permissions.contents: write` no workflow
-- `secrets.GIT_TOKEN` (PAT) para criar/push de tag e disparar o workflow de release/deploy por tag
+- `permissions.actions: write` no workflow (fallback de `workflow_dispatch` quando o push de tag nao inicia run automatico)
+- `secrets.GIT_TOKEN` (PAT) para criar/push de tag
 - `vars.RELEASE_PACKAGE_JSON_PATH` (opcional, default `package.json`)
+- `vars.AUTO_TAG_TARGET_WORKFLOW_FILE` (opcional, default `bff-production.yml`)
 
 Comportamento do exemplo:
 - O auto-tag so roda quando o workflow `bff-v2-production` conclui com `success` em `push` da branch `production`.
+- Depois de criar/push da tag, ele confirma se o workflow de producao iniciou por `push` de tag; se nao iniciou, dispara `workflow_dispatch` automaticamente na mesma tag.

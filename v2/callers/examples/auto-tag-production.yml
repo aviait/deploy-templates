@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: auto-tag-production-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
@@ -57,12 +58,34 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve target production workflow file
+        id: wf
+        env:
+          WORKFLOW_RUN_PATH: ${{ github.event.workflow_run.path }}
+          WORKFLOW_FILE_VAR: ${{ vars.AUTO_TAG_TARGET_WORKFLOW_FILE }}
+        run: |
+          set -euo pipefail
+
+          WORKFLOW_FILE="${WORKFLOW_FILE_VAR}"
+
+          if [ -z "${WORKFLOW_FILE}" ] && [ -n "${WORKFLOW_RUN_PATH}" ]; then
+            WORKFLOW_FILE="$(basename "${WORKFLOW_RUN_PATH}")"
+          fi
+
+          if [ -z "${WORKFLOW_FILE}" ]; then
+            WORKFLOW_FILE="bff-production.yml"
+          fi
+
+          echo "workflow_file=${WORKFLOW_FILE}" >> "$GITHUB_OUTPUT"
+
       - name: Create and push tag (idempotent)
+        id: push_tag
         env:
           GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
+          echo "tag_pushed=false" >> "$GITHUB_OUTPUT"
 
           if [ -z "${GIT_TOKEN:-}" ]; then
             echo "::error::GIT_TOKEN ausente. Configure um PAT em secrets.GIT_TOKEN para que o push da tag dispare os workflows de release/deploy."
@@ -87,6 +110,65 @@ jobs:
           git tag -a "${TAG}" -m "${TAG}"
           git remote set-url origin "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "${TAG}"
+          echo "tag_pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure production workflow starts for tag
+        if: ${{ steps.push_tag.outputs.tag_pushed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          WORKFLOW_FILE: ${{ steps.wf.outputs.workflow_file }}
+        run: |
+          set -euo pipefail
+
+          RUNS_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=push&per_page=30"
+          found_run="false"
+
+          for _ in 1 2 3 4 5 6; do
+            RUNS_JSON="$(curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${RUNS_API}")"
+
+            if printf '%s' "${RUNS_JSON}" | python3 - "${TAG}" "${TARGET_SHA}" <<'PY'
+          import json
+          import sys
+
+          tag = sys.argv[1]
+          target_sha = sys.argv[2]
+          data = json.load(sys.stdin)
+
+          for run in data.get("workflow_runs", []):
+            if run.get("head_sha") != target_sha:
+              continue
+            ref = str(run.get("ref", ""))
+            head_branch = str(run.get("head_branch", ""))
+            if ref == f"refs/tags/{tag}" or head_branch == tag:
+              print(run.get("html_url", ""))
+              sys.exit(0)
+
+          sys.exit(1)
+          PY
+            then
+              found_run="true"
+              break
+            fi
+
+            sleep 5
+          done
+
+          if [ "${found_run}" = "true" ]; then
+            echo "::notice::Workflow de produção detectado automaticamente para tag ${TAG}."
+            exit 0
+          fi
+
+          echo "::warning::Nao foi detectado run automatico por push de tag. Disparando workflow_dispatch em ${WORKFLOW_FILE} para garantir release/deploy."
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            -d "{\"ref\":\"${TAG}\"}"
 
       - name: Summary
         if: always()
@@ -95,4 +177,6 @@ jobs:
             echo "## auto-tag-production"
             echo "- ref: \`${{ github.ref }}\`"
             echo "- tag: \`${{ steps.ver.outputs.tag }}\`"
+            echo "- target workflow file: \`${{ steps.wf.outputs.workflow_file }}\`"
+            echo "- tag pushed: \`${{ steps.push_tag.outputs.tag_pushed }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

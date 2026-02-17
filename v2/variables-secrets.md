@@ -19,6 +19,8 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 Nota (auto-tag):
 - O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GIT_TOKEN` (PAT) para criar/push de tag.
 - Para que o push da tag dispare outros workflows (`on: push tags`), use PAT dedicado em vez de `github.token` por causa da protecao anti-recursao do GitHub.
+- O exemplo usa `permissions.actions: write` para fallback de `workflow_dispatch` quando o push da tag nao inicia run automaticamente.
+- Variavel opcional: `AUTO_TAG_TARGET_WORKFLOW_FILE` (default `bff-production.yml`) para definir qual workflow de producao deve ser disparado no fallback.
 
 ## Variaveis comuns (usadas pelos callers)
 | Variavel | Tipo | Default | O que faz |
