@@ -86,6 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "tag_pushed=false" >> "$GITHUB_OUTPUT"
+          echo "tag_ready=false" >> "$GITHUB_OUTPUT"
 
           if [ -z "${GIT_TOKEN:-}" ]; then
             echo "::error::GIT_TOKEN ausente. Configure um PAT em secrets.GIT_TOKEN para que o push da tag dispare os workflows de release/deploy."
@@ -97,7 +98,8 @@ jobs:
           if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
             TAG_SHA="$(git rev-list -n 1 "${TAG}")"
             if [ "${TAG_SHA}" = "${GITHUB_SHA}" ]; then
-              echo "::notice::Tag ${TAG} ja existe neste commit. Nada a fazer."
+              echo "::notice::Tag ${TAG} ja existe neste commit. Garantindo run de producao para a tag."
+              echo "tag_ready=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "::error::Tag ${TAG} ja existe apontando para outro commit (${TAG_SHA}). Bumpe a versao do package.json."
@@ -111,27 +113,27 @@ jobs:
           git remote set-url origin "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "${TAG}"
           echo "tag_pushed=true" >> "$GITHUB_OUTPUT"
+          echo "tag_ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Ensure production workflow starts for tag
-        if: ${{ steps.push_tag.outputs.tag_pushed == 'true' }}
+        if: ${{ steps.push_tag.outputs.tag_ready == 'true' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          API_TOKEN: ${{ secrets.GIT_TOKEN }}
           TAG: ${{ steps.ver.outputs.tag }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           WORKFLOW_FILE: ${{ steps.wf.outputs.workflow_file }}
         run: |
           set -euo pipefail
 
-          RUNS_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=push&per_page=30"
-          found_run="false"
+          if [ -z "${API_TOKEN:-}" ]; then
+            echo "::error::GIT_TOKEN ausente para validar/disparar workflow de producao."
+            exit 1
+          fi
 
-          for _ in 1 2 3 4 5 6; do
-            RUNS_JSON="$(curl -fsSL \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${RUNS_API}")"
-
-            if printf '%s' "${RUNS_JSON}" | python3 - "${TAG}" "${TARGET_SHA}" <<'PY'
+          RUNS_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=50"
+          find_run_url() {
+            local runs_json="$1"
+            printf '%s' "${runs_json}" | python3 - "${TAG}" "${TARGET_SHA}" <<'PY'
           import json
           import sys
 
@@ -144,31 +146,63 @@ jobs:
               continue
             ref = str(run.get("ref", ""))
             head_branch = str(run.get("head_branch", ""))
-            if ref == f"refs/tags/{tag}" or head_branch == tag:
+            event = str(run.get("event", ""))
+            if (ref == f"refs/tags/{tag}" or head_branch == tag) and event in {"push", "workflow_dispatch"}:
               print(run.get("html_url", ""))
               sys.exit(0)
 
           sys.exit(1)
           PY
-            then
-              found_run="true"
-              break
+          }
+
+          detect_existing_run() {
+            local runs_json="$1"
+            local run_url=""
+            if run_url="$(find_run_url "${runs_json}")"; then
+              echo "${run_url}"
+              return 0
+            fi
+            return 1
+          }
+
+          for _ in 1 2 3 4 5 6; do
+            RUNS_JSON="$(curl -fsSL \
+              -H "Authorization: Bearer ${API_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${RUNS_API}")"
+
+            if RUN_URL="$(detect_existing_run "${RUNS_JSON}")"; then
+              echo "::notice::Workflow de producao detectado para tag ${TAG}: ${RUN_URL}"
+              exit 0
             fi
 
             sleep 5
           done
 
-          if [ "${found_run}" = "true" ]; then
-            echo "::notice::Workflow de produção detectado automaticamente para tag ${TAG}."
-            exit 0
-          fi
-
-          echo "::warning::Nao foi detectado run automatico por push de tag. Disparando workflow_dispatch em ${WORKFLOW_FILE} para garantir release/deploy."
+          echo "::warning::Nao foi detectado run automatico por push de tag. Disparando workflow_dispatch em ${WORKFLOW_FILE}."
           curl -fsSL -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
             -d "{\"ref\":\"${TAG}\"}"
+
+          for _ in 1 2 3 4 5 6 7 8; do
+            RUNS_JSON="$(curl -fsSL \
+              -H "Authorization: Bearer ${API_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${RUNS_API}")"
+
+            if RUN_URL="$(detect_existing_run "${RUNS_JSON}")"; then
+              echo "::notice::Workflow de producao garantido para tag ${TAG}: ${RUN_URL}"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "::error::Tag ${TAG} criada, mas nenhum run de producao foi encontrado para ${WORKFLOW_FILE}."
+          echo "::error::Verifique permissao 'Actions: Read and write' no PAT em secrets.GIT_TOKEN e se o workflow ${WORKFLOW_FILE} existe no branch padrao."
+          exit 1
 
       - name: Summary
         if: always()
@@ -179,4 +213,5 @@ jobs:
             echo "- tag: \`${{ steps.ver.outputs.tag }}\`"
             echo "- target workflow file: \`${{ steps.wf.outputs.workflow_file }}\`"
             echo "- tag pushed: \`${{ steps.push_tag.outputs.tag_pushed }}\`"
+            echo "- tag ready: \`${{ steps.push_tag.outputs.tag_ready }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

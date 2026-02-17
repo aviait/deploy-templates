@@ -17,7 +17,7 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 | `CHECKOUT_TOKEN` | nao | `v2-web.yml`, `v2-bff.yml`, `v2-worker.yml`, `v2-app.yml` | Token alternativo para `actions/checkout` quando o `GITHUB_TOKEN` nao consegue clonar o repo (ex.: orchestrator repo rodando pipeline para outro repo privado, submodules privados, restricoes de permissao). Recomendado: Fine-grained PAT com acesso apenas ao(s) repo(s) necessario(s) e permissao `Contents: Read`. |
 
 Nota (auto-tag):
-- O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GIT_TOKEN` (PAT) para criar/push de tag.
+- O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GIT_TOKEN` (PAT) para criar/push de tag e operar workflows via API (recomendado: `Contents: Read and write` + `Actions: Read and write`).
 - Para que o push da tag dispare outros workflows (`on: push tags`), use PAT dedicado em vez de `github.token` por causa da protecao anti-recursao do GitHub.
 - O exemplo usa `permissions.actions: write` para fallback de `workflow_dispatch` quando o push da tag nao inicia run automaticamente.
 - Variavel opcional: `AUTO_TAG_TARGET_WORKFLOW_FILE` (default `bff-production.yml`) para definir qual workflow de producao deve ser disparado no fallback.
