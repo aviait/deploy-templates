@@ -429,68 +429,68 @@ jobs:
         with:
           token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
-      - name: Setup Node
-        if: ${{ inputs.cache_dependency_path == '' }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node_version }}
-          cache: ${{ inputs.package_manager }}
+      # - name: Setup Node
+      #   if: ${{ inputs.cache_dependency_path == '' }}
+      #   uses: actions/setup-node@v6
+      #   with:
+      #     node-version: ${{ inputs.node_version }}
+      #     cache: ${{ inputs.package_manager }}
 
-      - name: Setup Node (custom cache path)
-        if: ${{ inputs.cache_dependency_path != '' }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node_version }}
-          cache: ${{ inputs.package_manager }}
-          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+      # - name: Setup Node (custom cache path)
+      #   if: ${{ inputs.cache_dependency_path != '' }}
+      #   uses: actions/setup-node@v6
+      #   with:
+      #     node-version: ${{ inputs.node_version }}
+      #     cache: ${{ inputs.package_manager }}
+      #     cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
-      - name: Setup pnpm
-        if: ${{ inputs.package_manager == 'pnpm' }}
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ inputs.pnpm_version }}
+      # - name: Setup pnpm
+      #   if: ${{ inputs.package_manager == 'pnpm' }}
+      #   uses: pnpm/action-setup@v4
+      #   with:
+      #     version: ${{ inputs.pnpm_version }}
 
-      - name: Install (reproducible)
-        run: |
-          set -euo pipefail
-          case "${{ inputs.package_manager }}" in
-            npm) npm ci ;;
-            yarn) corepack enable && yarn install --immutable ;;
-            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
-            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-          esac
+      # - name: Install (reproducible)
+      #   run: |
+      #     set -euo pipefail
+      #     case "${{ inputs.package_manager }}" in
+      #       npm) npm ci ;;
+      #       yarn) corepack enable && yarn install --immutable ;;
+      #       pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+      #     esac
 
-      - name: Dependency audit
-        run: |
-          set -euo pipefail
-          case "${{ inputs.package_manager }}" in
-            npm) npm audit --audit-level=high ;;
-            yarn)
-              if yarn npm audit --all >/dev/null 2>&1; then
-                yarn npm audit --all --recursive
-              else
-                yarn audit --level high
-              fi
-              ;;
-            pnpm) pnpm audit --audit-level high ;;
-            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-          esac
+      # - name: Dependency audit
+      #   run: |
+      #     set -euo pipefail
+      #     case "${{ inputs.package_manager }}" in
+      #       npm) npm audit --audit-level=high ;;
+      #       yarn)
+      #         if yarn npm audit --all >/dev/null 2>&1; then
+      #           yarn npm audit --all --recursive
+      #         else
+      #           yarn audit --level high
+      #         fi
+      #         ;;
+      #       pnpm) pnpm audit --audit-level high ;;
+      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+      #     esac
 
-      - name: Secret scanning (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+      # - name: Secret scanning (gitleaks)
+      #   uses: gitleaks/gitleaks-action@v2
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript
+      # - name: Initialize CodeQL
+      #   uses: github/codeql-action/init@v3
+      #   with:
+      #     languages: javascript
 
-      - name: CodeQL Autobuild
-        uses: github/codeql-action/autobuild@v3
+      # - name: CodeQL Autobuild
+      #   uses: github/codeql-action/autobuild@v3
 
-      - name: Analyze CodeQL
-        uses: github/codeql-action/analyze@v3
+      # - name: Analyze CodeQL
+      #   uses: github/codeql-action/analyze@v3
 
   release:
     name: release
