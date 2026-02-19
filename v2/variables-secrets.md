@@ -4,8 +4,14 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 
 ## Como os valores sao resolvidos
 1. Valor enviado no `with:` do caller.
-2. `vars` do GitHub Environment (`dev`, `hml`, `prd`).
-3. Default do workflow (quando existir).
+2. `vars` com escopo por ambiente (`*_DEV`, `*_HML`, `*_PRD`) quando `inputs.environment` for mapeavel para `dev|hml|prd`.
+3. `vars` sem sufixo (chave base).
+4. Default do workflow (quando existir).
+
+Mapeamento de ambiente para sufixo:
+- `dev`, `development` -> `DEV`
+- `hml`, `homologation`, `stage`, `staging`, `uat` -> `HML`
+- `prd`, `prod`, `production` -> `PRD`
 
 ## Onde cadastrar
 - `vars`: parametros de configuracao (host, portas, comandos, toggles).
@@ -32,6 +38,17 @@ Nota (auto-tag):
 | `PIPELINE_SEMVER_PREFIX` | string | `v` | Prefixo aceito para tags de release (`vX.Y.Z`). |
 | `PIPELINE_ENABLE_PROD_FROM_BRANCH` | boolean string | `false` | No caller de producao, permite deploy em push de branch `production` sem tag (`true`) ou apenas por tag (`false`). |
 
+## Matriz resumida (deploy/runtime por tipo)
+| Tipo | Variaveis obrigatorias de deploy/runtime | Segredo obrigatorio minimo |
+| --- | --- | --- |
+| `web` | `SSH_USER`, `SSH_HOST`, `DNS_NAME` | `PEM_KEY` |
+| `bff` | `SSH_USER`, `SSH_HOST`, `HOST_PORT` | `PEM_KEY` |
+| `worker` | `SSH_USER`, `SSH_HOST` | `PEM_KEY` |
+| `app` | depende da distribuicao habilitada (`FIREBASE_*`, assinatura Android/iOS, Fastlane) | depende da distribuicao habilitada |
+
+Observacao:
+- Para `web`, `bff` e `worker`, as obrigatorias acima aceitam forma sufixada por ambiente (`*_DEV`, `*_HML`, `*_PRD`) com fallback para a chave base.
+
 ## Variaveis legadas (nao usadas no modelo atual by-environment)
 - `PIPELINE_BRANCH_DEV`, `PIPELINE_BRANCH_HML`, `PIPELINE_BRANCH_PRD`
 - `PIPELINE_ENABLE_DEV`, `PIPELINE_ENABLE_HML`, `PIPELINE_ENABLE_PRD`
@@ -43,14 +60,14 @@ Workflow: `v2-web.yml`
 ### Variaveis de caller (CI/build)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `WEB_NODE_VERSION` | `20` | Versao do Node usada em quality/build/security. |
-| `WEB_PACKAGE_MANAGER` | `pnpm` (nos callers) | Define `npm`, `yarn` ou `pnpm`. |
+| `WEB_NODE_VERSION` | `22` | Versao do Node usada em quality/build/security. |
+| `WEB_PACKAGE_MANAGER` | `yarn` (nos callers) | Define `npm`, `yarn` ou `pnpm`. |
 | `WEB_PNPM_VERSION` | `9` | Versao do pnpm quando `WEB_PACKAGE_MANAGER=pnpm`. |
-| `WEB_CACHE_DEPENDENCY_PATH` | `apps/web/pnpm-lock.yaml` | Lockfile usado para cache de dependencias. |
-| `WEB_LINT_CMD` | `npm run lint` | Comando de lint (fail-fast). |
-| `WEB_TYPECHECK_CMD` | `npm run typecheck` | Comando de typecheck (fail-fast). |
-| `WEB_TEST_CMD` | `npm test -- --ci` | Comando de testes (fail-fast). |
-| `WEB_BUILD_CMD` | `npm run build` | Comando de build de producao. |
+| `WEB_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile usado para cache de dependencias. |
+| `WEB_LINT_CMD` | `yarn lint` | Comando de lint (fail-fast). |
+| `WEB_TYPECHECK_CMD` | `yarn typecheck` | Comando de typecheck (fail-fast). |
+| `WEB_TEST_CMD` | `yarn test` | Comando de testes (fail-fast). |
+| `WEB_BUILD_CMD` | `yarn build` | Comando de build de producao. |
 | `WEB_BUILD_OUTPUT_DIR` | `dist` | Pasta do output que vira artifact e deploy. |
 | `WEB_ARTIFACT_NAME` | `web-build` | Nome do artifact de build publicado no Actions. |
 | `WEB_DNS` | vazio | DNS principal da aplicação web (ex.: `backoffice.aviait.com.br`) usado para resolver `/var/www/<DNS_NAME>` e smoke URL padrão. |
@@ -81,13 +98,13 @@ Workflow: `v2-bff.yml`
 ### Variaveis de caller (CI/build/publicacao)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `BFF_NODE_VERSION` | `20` | Versao do Node na pipeline. |
-| `BFF_PACKAGE_MANAGER` | `pnpm` (nos callers) | Gerenciador de pacotes. |
+| `BFF_NODE_VERSION` | `22` | Versao do Node na pipeline. |
+| `BFF_PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
 | `BFF_PNPM_VERSION` | `9` | Versao do pnpm. |
-| `BFF_CACHE_DEPENDENCY_PATH` | `apps/bff/pnpm-lock.yaml` | Lockfile para cache. |
-| `BFF_LINT_CMD` | `npm run lint` | Lint de codigo. |
-| `BFF_TYPECHECK_CMD` | `npm run typecheck` | Typecheck da aplicacao. |
-| `BFF_TEST_CMD` | `npm test -- --ci` | Testes automatizados. |
+| `BFF_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
+| `BFF_LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
+| `BFF_TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
+| `BFF_TEST_CMD` | `yarn test` | Testes automatizados. |
 | `BFF_DOCKERFILE` | `Dockerfile` | Dockerfile usado no build da imagem. |
 | `BFF_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `BFF_IMAGE_NAMESPACE` | vazio | Namespace quando `BFF_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
@@ -141,13 +158,13 @@ Workflow: `v2-worker.yml`
 ### Variaveis de caller (CI/build/publicacao)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `WORKER_NODE_VERSION` | `20` | Versao do Node na pipeline. |
-| `WORKER_PACKAGE_MANAGER` | `pnpm` (nos callers) | Gerenciador de pacotes. |
+| `WORKER_NODE_VERSION` | `22` | Versao do Node na pipeline. |
+| `WORKER_PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
 | `WORKER_PNPM_VERSION` | `9` | Versao do pnpm. |
-| `WORKER_CACHE_DEPENDENCY_PATH` | `apps/worker/pnpm-lock.yaml` | Lockfile para cache. |
-| `WORKER_LINT_CMD` | `npm run lint` | Lint de codigo. |
-| `WORKER_TYPECHECK_CMD` | `npm run typecheck` | Typecheck da aplicacao. |
-| `WORKER_TEST_CMD` | `npm test -- --ci` | Testes automatizados. |
+| `WORKER_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
+| `WORKER_LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
+| `WORKER_TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
+| `WORKER_TEST_CMD` | `yarn test` | Testes automatizados. |
 | `WORKER_DOCKERFILE` | `Dockerfile` | Dockerfile do worker. |
 | `WORKER_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `WORKER_IMAGE_NAMESPACE` | vazio | Namespace quando `WORKER_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
@@ -178,6 +195,9 @@ Notas de release (tags):
 | `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
 | `GITHUB_VARS_EXCLUDE` | nao | vazio | Exclusao de chaves da injecao de vars (uso direto do workflow). |
 
+Nota de resolucao por ambiente (Worker):
+- Para as variaveis de deploy/runtime acima, o template prioriza automaticamente `*_DEV`, `*_HML` ou `*_PRD` conforme o `inputs.environment` (`dev|hml|prd`), e cai para a chave base sem sufixo quando o sufixado nao existir.
+
 ### Segredos de environment
 | Segredo | Obrigatorio | O que faz |
 | --- | --- | --- |
@@ -192,13 +212,13 @@ Workflow: `v2-app.yml`
 ### Variaveis de caller (CI/build/distribuicao)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `APP_NODE_VERSION` | `20` | Versao do Node na pipeline mobile. |
-| `APP_PACKAGE_MANAGER` | `pnpm` (nos callers) | Gerenciador de pacotes do projeto mobile. |
+| `APP_NODE_VERSION` | `22` | Versao do Node na pipeline mobile. |
+| `APP_PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes do projeto mobile. |
 | `APP_PNPM_VERSION` | `9` | Versao do pnpm. |
-| `APP_CACHE_DEPENDENCY_PATH` | `apps/mobile/pnpm-lock.yaml` | Lockfile para cache de dependencias. |
-| `APP_LINT_CMD` | `npm run lint` | Lint de codigo. |
-| `APP_TYPECHECK_CMD` | `npm run typecheck` | Typecheck. |
-| `APP_TEST_CMD` | `npm test -- --ci` | Testes automatizados. |
+| `APP_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache de dependencias. |
+| `APP_LINT_CMD` | `yarn lint` | Lint de codigo. |
+| `APP_TYPECHECK_CMD` | `yarn typecheck` | Typecheck. |
+| `APP_TEST_CMD` | `yarn test --watchman=false --passWithNoTests` | Testes automatizados. |
 | `APP_BUILD_ANDROID` | `true` | Ativa build Android. |
 | `APP_BUILD_IOS` | `true` | Ativa build iOS. |
 | `APP_ANDROID_DIR` | `android` | Diretorio de build Android. |

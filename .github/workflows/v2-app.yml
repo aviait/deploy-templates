@@ -17,11 +17,11 @@ on:
       node_version:
         required: false
         type: string
-        default: "20"
+        default: "22"
       package_manager:
         required: false
         type: string
-        default: "npm"
+        default: "yarn"
       pnpm_version:
         required: false
         type: string
@@ -33,15 +33,15 @@ on:
       lint_cmd:
         required: false
         type: string
-        default: "npm run lint"
+        default: "yarn lint"
       typecheck_cmd:
         required: false
         type: string
-        default: "npm run typecheck"
+        default: "yarn typecheck"
       test_cmd:
         required: false
         type: string
-        default: "npm test -- --ci"
+        default: "yarn test --watchman=false --passWithNoTests"
       build_android:
         required: false
         type: boolean

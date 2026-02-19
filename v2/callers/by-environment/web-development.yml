@@ -52,7 +52,7 @@ jobs:
     with:
       environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
       working_directory: ${{ vars.WEB_WORKING_DIRECTORY || '.' }}
-      node_version: ${{ vars.WEB_NODE_VERSION || '20' }}
+      node_version: ${{ vars.WEB_NODE_VERSION || '22' }}
       package_manager: ${{ vars.WEB_PACKAGE_MANAGER || 'yarn' }}
       pnpm_version: ${{ vars.WEB_PNPM_VERSION || '9' }}
       cache_dependency_path: ${{ vars.WEB_CACHE_DEPENDENCY_PATH || 'yarn.lock' }}

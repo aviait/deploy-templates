@@ -36,13 +36,13 @@ jobs:
     with:
       environment: ${{ vars.PIPELINE_ENV_HML || 'hml' }}
       working_directory: apps/bff
-      node_version: ${{ vars.BFF_NODE_VERSION || '20' }}
-      package_manager: ${{ vars.BFF_PACKAGE_MANAGER || 'pnpm' }}
+      node_version: ${{ vars.BFF_NODE_VERSION || '22' }}
+      package_manager: ${{ vars.BFF_PACKAGE_MANAGER || 'yarn' }}
       pnpm_version: ${{ vars.BFF_PNPM_VERSION || '9' }}
-      cache_dependency_path: ${{ vars.BFF_CACHE_DEPENDENCY_PATH || 'apps/bff/pnpm-lock.yaml' }}
-      lint_cmd: ${{ vars.BFF_LINT_CMD || 'npm run lint' }}
-      typecheck_cmd: ${{ vars.BFF_TYPECHECK_CMD || 'npm run typecheck' }}
-      test_cmd: ${{ vars.BFF_TEST_CMD || 'npm test -- --ci' }}
+      cache_dependency_path: ${{ vars.BFF_CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
+      lint_cmd: ${{ vars.BFF_LINT_CMD || 'yarn lint && yarn format:check' }}
+      typecheck_cmd: ${{ vars.BFF_TYPECHECK_CMD || 'yarn typecheck' }}
+      test_cmd: ${{ vars.BFF_TEST_CMD || 'yarn test' }}
       dockerfile: ${{ vars.BFF_DOCKERFILE || 'Dockerfile' }}
       registry: ${{ vars.BFF_REGISTRY || 'ghcr.io' }}
       image_namespace: ${{ vars.BFF_IMAGE_NAMESPACE }}

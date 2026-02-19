@@ -36,13 +36,13 @@ jobs:
     with:
       environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
       working_directory: apps/worker
-      node_version: ${{ vars.WORKER_NODE_VERSION || '20' }}
-      package_manager: ${{ vars.WORKER_PACKAGE_MANAGER || 'pnpm' }}
+      node_version: ${{ vars.WORKER_NODE_VERSION || '22' }}
+      package_manager: ${{ vars.WORKER_PACKAGE_MANAGER || 'yarn' }}
       pnpm_version: ${{ vars.WORKER_PNPM_VERSION || '9' }}
-      cache_dependency_path: ${{ vars.WORKER_CACHE_DEPENDENCY_PATH || 'apps/worker/pnpm-lock.yaml' }}
-      lint_cmd: ${{ vars.WORKER_LINT_CMD || 'npm run lint' }}
-      typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'npm run typecheck' }}
-      test_cmd: ${{ vars.WORKER_TEST_CMD || 'npm test -- --ci' }}
+      cache_dependency_path: ${{ vars.WORKER_CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
+      lint_cmd: ${{ vars.WORKER_LINT_CMD || 'yarn lint && yarn format:check' }}
+      typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'yarn typecheck' }}
+      test_cmd: ${{ vars.WORKER_TEST_CMD || 'yarn test' }}
       dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
       registry: ${{ vars.WORKER_REGISTRY || 'ghcr.io' }}
       image_namespace: ${{ vars.WORKER_IMAGE_NAMESPACE }}

@@ -17,11 +17,11 @@ on:
       node_version:
         required: false
         type: string
-        default: "20"
+        default: "22"
       package_manager:
         required: false
         type: string
-        default: "npm"
+        default: "yarn"
       pnpm_version:
         required: false
         type: string
@@ -33,15 +33,15 @@ on:
       lint_cmd:
         required: false
         type: string
-        default: "npm run lint"
+        default: "yarn lint && yarn format:check"
       typecheck_cmd:
         required: false
         type: string
-        default: "npm run typecheck"
+        default: "yarn typecheck"
       test_cmd:
         required: false
         type: string
-        default: "npm test -- --ci"
+        default: "yarn test"
       dockerfile:
         required: false
         type: string
@@ -599,6 +599,7 @@ jobs:
           IN_INJECT_ALL_GITHUB_VARS: ${{ inputs.inject_all_github_vars }}
           IN_GITHUB_VARS_PREFIX: ${{ inputs.github_vars_prefix }}
           IN_GITHUB_VARS_EXCLUDE: ${{ inputs.github_vars_exclude }}
+          IN_PIPELINE_ENV: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -646,24 +647,48 @@ jobs:
             return fallback;
           };
 
+          const resolveEnvSuffix = (v) => {
+            const raw = String(v || '').trim();
+            if (!raw) return '';
+            const upper = raw.toUpperCase();
+            if (['DEV', 'HML', 'PRD'].includes(upper)) return upper;
+            const lower = raw.toLowerCase();
+            if (['dev', 'development'].includes(lower)) return 'DEV';
+            if (['hml', 'homologation', 'stage', 'staging', 'uat'].includes(lower)) return 'HML';
+            if (['prd', 'prod', 'production'].includes(lower)) return 'PRD';
+            return '';
+          };
+
+          const envSuffix = resolveEnvSuffix(process.env.IN_PIPELINE_ENV);
+          const scopedVar = (baseKey) => {
+            if (envSuffix) {
+              const scopedKey = `${baseKey}_${envSuffix}`;
+              const scopedValue = vars[scopedKey];
+              if (scopedValue !== undefined && scopedValue !== null && String(scopedValue).trim() !== '') {
+                return scopedValue;
+              }
+            }
+            return vars[baseKey];
+          };
+
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
-            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
-            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
-            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
-            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
-            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            worker_name: pickString(process.env.IN_WORKER_NAME, vars.WORKER_NAME, process.env.IN_APP_NAME),
-            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, vars.WORKER_RUN_ENVS),
-            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, vars.WORKER_EXTRA_ARGS),
-            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, true),
-            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, vars.IMAGE_RETENTION_COUNT),
-            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, vars.STARTUP_CHECK_RETRIES),
-            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, vars.STARTUP_CHECK_DELAY_SECONDS),
-            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, true),
-            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, true),
-            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, vars.GITHUB_VARS_PREFIX),
-            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, vars.GITHUB_VARS_EXCLUDE),
+            ssh_user: pickString(process.env.IN_SSH_USER, scopedVar('SSH_USER')),
+            ssh_host: pickString(process.env.IN_SSH_HOST, scopedVar('SSH_HOST')),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
+            worker_name: pickString(process.env.IN_WORKER_NAME, scopedVar('WORKER_NAME'), process.env.IN_APP_NAME),
+            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, scopedVar('WORKER_RUN_ENVS')),
+            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, scopedVar('WORKER_EXTRA_ARGS')),
+            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, toBool(scopedVar('REMOTE_DOCKER_LOGIN'), true)),
+            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, scopedVar('IMAGE_RETENTION_COUNT')),
+            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, scopedVar('STARTUP_CHECK_RETRIES')),
+            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, scopedVar('STARTUP_CHECK_DELAY_SECONDS')),
+            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, toBool(scopedVar('PRUNE_RUNNER'), true)),
+            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, toBool(scopedVar('INJECT_ALL_GITHUB_VARS'), true)),
+            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, scopedVar('GITHUB_VARS_PREFIX')),
+            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, scopedVar('GITHUB_VARS_EXCLUDE')),
           };
 
           for (const [k, v] of Object.entries(out)) {
@@ -738,6 +763,7 @@ jobs:
           IN_INJECT_ALL_GITHUB_VARS: ${{ inputs.inject_all_github_vars }}
           IN_GITHUB_VARS_PREFIX: ${{ inputs.github_vars_prefix }}
           IN_GITHUB_VARS_EXCLUDE: ${{ inputs.github_vars_exclude }}
+          IN_PIPELINE_ENV: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -785,24 +811,48 @@ jobs:
             return fallback;
           };
 
+          const resolveEnvSuffix = (v) => {
+            const raw = String(v || '').trim();
+            if (!raw) return '';
+            const upper = raw.toUpperCase();
+            if (['DEV', 'HML', 'PRD'].includes(upper)) return upper;
+            const lower = raw.toLowerCase();
+            if (['dev', 'development'].includes(lower)) return 'DEV';
+            if (['hml', 'homologation', 'stage', 'staging', 'uat'].includes(lower)) return 'HML';
+            if (['prd', 'prod', 'production'].includes(lower)) return 'PRD';
+            return '';
+          };
+
+          const envSuffix = resolveEnvSuffix(process.env.IN_PIPELINE_ENV);
+          const scopedVar = (baseKey) => {
+            if (envSuffix) {
+              const scopedKey = `${baseKey}_${envSuffix}`;
+              const scopedValue = vars[scopedKey];
+              if (scopedValue !== undefined && scopedValue !== null && String(scopedValue).trim() !== '') {
+                return scopedValue;
+              }
+            }
+            return vars[baseKey];
+          };
+
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
-            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
-            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
-            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
-            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
-            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            worker_name: pickString(process.env.IN_WORKER_NAME, vars.WORKER_NAME, process.env.IN_APP_NAME),
-            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, vars.WORKER_RUN_ENVS),
-            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, vars.WORKER_EXTRA_ARGS),
-            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, true),
-            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, vars.IMAGE_RETENTION_COUNT),
-            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, vars.STARTUP_CHECK_RETRIES),
-            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, vars.STARTUP_CHECK_DELAY_SECONDS),
-            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, true),
-            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, true),
-            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, vars.GITHUB_VARS_PREFIX),
-            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, vars.GITHUB_VARS_EXCLUDE),
+            ssh_user: pickString(process.env.IN_SSH_USER, scopedVar('SSH_USER')),
+            ssh_host: pickString(process.env.IN_SSH_HOST, scopedVar('SSH_HOST')),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
+            worker_name: pickString(process.env.IN_WORKER_NAME, scopedVar('WORKER_NAME'), process.env.IN_APP_NAME),
+            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, scopedVar('WORKER_RUN_ENVS')),
+            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, scopedVar('WORKER_EXTRA_ARGS')),
+            remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, toBool(scopedVar('REMOTE_DOCKER_LOGIN'), true)),
+            image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, scopedVar('IMAGE_RETENTION_COUNT')),
+            startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, scopedVar('STARTUP_CHECK_RETRIES')),
+            startup_check_delay_seconds: pickNonNegativeInt(5, process.env.IN_STARTUP_CHECK_DELAY_SECONDS, scopedVar('STARTUP_CHECK_DELAY_SECONDS')),
+            prune_runner: toBool(process.env.IN_PRUNE_RUNNER, toBool(scopedVar('PRUNE_RUNNER'), true)),
+            inject_all_github_vars: toBool(process.env.IN_INJECT_ALL_GITHUB_VARS, toBool(scopedVar('INJECT_ALL_GITHUB_VARS'), true)),
+            github_vars_prefix: pickString(process.env.IN_GITHUB_VARS_PREFIX, scopedVar('GITHUB_VARS_PREFIX')),
+            github_vars_exclude: pickString(process.env.IN_GITHUB_VARS_EXCLUDE, scopedVar('GITHUB_VARS_EXCLUDE')),
           };
 
           for (const [k, v] of Object.entries(out)) {
