@@ -125,6 +125,8 @@ on:
     secrets:
       CHECKOUT_TOKEN:
         required: false
+      GIT_TOKEN:
+        required: false
       FIREBASE_TOKEN:
         required: false
       ANDROID_KEYSTORE_BASE64:
@@ -164,9 +166,25 @@ jobs:
         shell: bash
         working-directory: ${{ inputs.working_directory }}
     steps:
+      - name: Validate pipeline inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if [ ! -d "${{ inputs.working_directory }}" ]; then
+            echo "::error::working_directory '${{ inputs.working_directory }}' não existe no repositório."
+            echo "::error::Ajuste o caller para o caminho correto da aplicação."
+            exit 1
+          fi
+
+          if [ "${{ inputs.enable_release }}" != "true" ] && [ "${{ inputs.deploy_on_tag_only }}" = "true" ]; then
+            echo "::error::Configuração inválida: enable_release=false com deploy_on_tag_only=true."
+            echo "::error::Ajuste para enable_release=true (fluxo por tag) ou deploy_on_tag_only=false (deploy por branch)."
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -216,7 +234,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -264,33 +282,51 @@ jobs:
           esac
 
       - name: Configure Android signing
-        if: ${{ inputs.build_android && secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ inputs.build_android }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 ausente; pulando configuração de assinatura Android."
+            exit 0
+          fi
           mkdir -p "$RUNNER_TEMP/signing"
-          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/signing/release.keystore"
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "$RUNNER_TEMP/signing/release.keystore"
           {
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/signing/release.keystore"
-            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+            echo "ANDROID_KEYSTORE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}"
+            echo "ANDROID_KEY_ALIAS=${ANDROID_KEY_ALIAS}"
+            echo "ANDROID_KEY_PASSWORD=${ANDROID_KEY_PASSWORD}"
           } >> "$GITHUB_ENV"
 
       - name: Configure iOS signing
-        if: ${{ inputs.build_ios && secrets.IOS_P12_BASE64 != '' && secrets.IOS_MOBILEPROVISION_BASE64 != '' }}
+        if: ${{ inputs.build_ios }}
+        env:
+          IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
+          if [ -z "${IOS_P12_BASE64:-}" ] || [ -z "${IOS_MOBILEPROVISION_BASE64:-}" ]; then
+            echo "::notice::IOS_P12_BASE64/IOS_MOBILEPROVISION_BASE64 ausentes; pulando configuração de assinatura iOS."
+            exit 0
+          fi
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          security create-keychain -p "${{ secrets.IOS_KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security create-keychain -p "${IOS_KEYCHAIN_PASSWORD}" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "${{ secrets.IOS_KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "${IOS_KEYCHAIN_PASSWORD}" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
 
-          printf '%s' "${{ secrets.IOS_P12_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "${{ secrets.IOS_P12_PASSWORD }}" -T /usr/bin/codesign
+          printf '%s' "${IOS_P12_BASE64}" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "${IOS_P12_PASSWORD}" -T /usr/bin/codesign
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          printf '%s' "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision"
+          printf '%s' "${IOS_MOBILEPROVISION_BASE64}" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision"
 
       - name: Build Android
         if: ${{ inputs.build_android }}
@@ -345,7 +381,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -397,7 +433,7 @@ jobs:
       - name: Secret scanning (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -646,12 +682,13 @@ jobs:
           path: ${{ runner.temp }}/android
 
       - name: Resolve Android file
+        id: resolve_android_file
         if: ${{ inputs.build_android && steps.resolve.outputs.firebase_app_id_android != '' }}
         run: |
           set -euo pipefail
           FILE="$(find "$RUNNER_TEMP/android" -type f | head -n 1)"
           test -n "$FILE"
-          echo "ANDROID_FILE=$FILE" >> "$GITHUB_ENV"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
 
       - name: Distribute Android (Firebase)
         if: ${{ inputs.build_android && steps.resolve.outputs.firebase_app_id_android != '' }}
@@ -660,7 +697,7 @@ jobs:
           appId: ${{ steps.resolve.outputs.firebase_app_id_android }}
           token: ${{ secrets.FIREBASE_TOKEN }}
           groups: ${{ steps.resolve.outputs.firebase_groups }}
-          file: ${{ env.ANDROID_FILE }}
+          file: ${{ steps.resolve_android_file.outputs.file }}
 
       - name: Download iOS artifact
         if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
@@ -670,12 +707,13 @@ jobs:
           path: ${{ runner.temp }}/ios
 
       - name: Resolve iOS file
+        id: resolve_ios_file
         if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
         run: |
           set -euo pipefail
           FILE="$(find "$RUNNER_TEMP/ios" -type f | head -n 1)"
           test -n "$FILE"
-          echo "IOS_FILE=$FILE" >> "$GITHUB_ENV"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
 
       - name: Distribute iOS (Firebase)
         if: ${{ inputs.build_ios && steps.resolve.outputs.firebase_app_id_ios != '' }}
@@ -684,13 +722,13 @@ jobs:
           appId: ${{ steps.resolve.outputs.firebase_app_id_ios }}
           token: ${{ secrets.FIREBASE_TOKEN }}
           groups: ${{ steps.resolve.outputs.firebase_groups }}
-          file: ${{ env.IOS_FILE }}
+          file: ${{ steps.resolve_ios_file.outputs.file }}
 
       - name: Checkout for Fastlane release
         if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Ruby
         if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
@@ -710,12 +748,18 @@ jobs:
         run: ${{ steps.resolve.outputs.bundle_install_cmd }}
 
       - name: Configure App Store Connect API key
-        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' && secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 != '' }}
+        if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' }}
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
         working-directory: ${{ steps.resolve.outputs.fastlane_working_directory }}
         run: |
           set -euo pipefail
+          if [ -z "${APP_STORE_CONNECT_PRIVATE_KEY_BASE64:-}" ]; then
+            echo "::notice::APP_STORE_CONNECT_PRIVATE_KEY_BASE64 ausente; pulando geração do AuthKey.p8."
+            exit 0
+          fi
           mkdir -p fastlane
-          printf '%s' "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}" | base64 -d > fastlane/AuthKey.p8
+          printf '%s' "${APP_STORE_CONNECT_PRIVATE_KEY_BASE64}" | base64 -d > fastlane/AuthKey.p8
 
       - name: Release Android (Fastlane)
         if: ${{ steps.resolve.outputs.deploy_via_fastlane == 'true' && inputs.build_android }}

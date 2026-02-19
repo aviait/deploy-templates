@@ -71,4 +71,5 @@ jobs:
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
+      GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
       PEM_KEY: ${{ secrets.PEM_KEY }}

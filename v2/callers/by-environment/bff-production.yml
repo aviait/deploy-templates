@@ -57,6 +57,7 @@ jobs:
       github_vars_exclude: ${{ vars.BFF_GITHUB_VARS_EXCLUDE }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
+      GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
       PEM_KEY: ${{ secrets.PEM_KEY }}
       DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
       DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}

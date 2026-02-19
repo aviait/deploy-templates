@@ -15,6 +15,7 @@ Este documento detalha o que cada variavel/segredo controla nos templates `v2-we
 | Segredo | Obrigatorio | Onde usa | O que faz |
 | --- | --- | --- | --- |
 | `CHECKOUT_TOKEN` | nao | `v2-web.yml`, `v2-bff.yml`, `v2-worker.yml`, `v2-app.yml` | Token alternativo para `actions/checkout` quando o `GITHUB_TOKEN` nao consegue clonar o repo (ex.: orchestrator repo rodando pipeline para outro repo privado, submodules privados, restricoes de permissao). Recomendado: Fine-grained PAT com acesso apenas ao(s) repo(s) necessario(s) e permissao `Contents: Read`. |
+| `GIT_TOKEN` | nao | `v2-web.yml`, `v2-bff.yml`, `v2-worker.yml`, `v2-app.yml`, `auto-tag-production.yml` | PAT opcional para substituir uso direto de `secrets.GITHUB_TOKEN` (checkout, gitleaks, login GHCR) e para automacoes de tag/workflow por API. Recomendado: `Contents: Read and write`; para auto-tag, tambem `Actions: Read and write`. |
 
 Nota (auto-tag):
 - O exemplo `v2/callers/examples/auto-tag-production.yml` usa `secrets.GIT_TOKEN` (PAT) para criar/push de tag e operar workflows via API (recomendado: `Contents: Read and write` + `Actions: Read and write`).

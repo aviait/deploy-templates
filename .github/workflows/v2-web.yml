@@ -117,6 +117,8 @@ on:
     secrets:
       CHECKOUT_TOKEN:
         required: false
+      GIT_TOKEN:
+        required: false
       PEM_KEY:
         required: false
 
@@ -132,9 +134,25 @@ jobs:
         shell: bash
         working-directory: ${{ inputs.working_directory }}
     steps:
+      - name: Validate pipeline inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if [ ! -d "${{ inputs.working_directory }}" ]; then
+            echo "::error::working_directory '${{ inputs.working_directory }}' não existe no repositório."
+            echo "::error::Ajuste o caller para o caminho correto da aplicação."
+            exit 1
+          fi
+
+          if [ "${{ inputs.enable_release }}" != "true" ] && [ "${{ inputs.deploy_on_tag_only }}" = "true" ]; then
+            echo "::error::Configuração inválida: enable_release=false com deploy_on_tag_only=true."
+            echo "::error::Ajuste para enable_release=true (fluxo por tag) ou deploy_on_tag_only=false (deploy por branch)."
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -190,7 +208,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -222,6 +240,76 @@ jobs:
             pnpm) corepack enable && pnpm install --frozen-lockfile ;;
             *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
           esac
+
+      - name: Export build env vars (all GitHub vars with environment override)
+        id: export_build_env
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          IN_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+          const envName = String(process.env.IN_ENVIRONMENT || '').trim().toLowerCase();
+          const envSuffix =
+            envName === 'dev' || envName === 'development' ? '_DEV'
+            : envName === 'hml' || envName === 'homologation' || envName === 'homolog' ? '_HML'
+            : envName === 'prd' || envName === 'production' || envName === 'prod' ? '_PRD'
+            : '';
+
+          const resolved = {};
+          const hasEnvSuffix = (key) => /_(DEV|HML|PRD)$/.test(key);
+          const isValidEnvName = (key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+
+          for (const [key, raw] of Object.entries(vars)) {
+            if (hasEnvSuffix(key) || !isValidEnvName(key)) continue;
+            const value = String(raw ?? '').trim();
+            if (value !== '') resolved[key] = value;
+          }
+
+          if (envSuffix) {
+            for (const [key, raw] of Object.entries(vars)) {
+              if (!key.endsWith(envSuffix)) continue;
+              const baseKey = key.slice(0, -envSuffix.length);
+              if (!isValidEnvName(baseKey)) continue;
+              const value = String(raw ?? '').trim();
+              if (value !== '') resolved[baseKey] = value;
+            }
+          }
+
+          const keys = Object.keys(resolved).sort();
+          for (const key of keys) {
+            const delimiter = `EOF_${key}_${Date.now()}`;
+            fs.appendFileSync(process.env.GITHUB_ENV, `${key}<<${delimiter}\n${resolved[key]}\n${delimiter}\n`);
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `exported_count=${keys.length}\n`);
+          const keysDelimiter = `EOF_KEYS_${Date.now()}`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `exported_keys<<${keysDelimiter}\n${keys.join('\n')}\n${keysDelimiter}\n`);
+
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `- resolved GitHub vars for build: ${keys.length}\n`);
+          if (keys.length > 0) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `- resolved keys: ${keys.join(', ')}\n`);
+          }
+          NODE
+
+      - name: Printenv for build (resolved GitHub vars)
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.export_build_env.outputs.exported_count }}" = "0" ]; then
+            echo "(nenhuma var do GitHub exportada para o build)"
+            exit 0
+          fi
+
+          echo "Ambiente disponível para build (vars resolvidas com override de ambiente):"
+          while IFS= read -r key; do
+            [ -z "${key}" ] && continue
+            printf '%s=%s\n' "${key}" "${!key-}"
+          done <<'EOF'
+          ${{ steps.export_build_env.outputs.exported_keys }}
+          EOF
 
       - name: Build production assets
         run: ${{ inputs.build_cmd }}
@@ -255,7 +343,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       - name: Setup Node
         if: ${{ inputs.cache_dependency_path == '' }}
@@ -307,7 +395,7 @@ jobs:
       - name: Secret scanning (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3

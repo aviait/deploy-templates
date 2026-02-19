@@ -68,4 +68,5 @@ jobs:
       deploy_on_tag_only: false
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
+      GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
       PEM_KEY: ${{ secrets.PEM_KEY }}
