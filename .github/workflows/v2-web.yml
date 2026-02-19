@@ -255,7 +255,7 @@ jobs:
           const envName = String(process.env.IN_ENVIRONMENT || '').trim().toLowerCase();
           const envSuffix =
             envName === 'dev' || envName === 'development' ? '_DEV'
-            : envName === 'hml' || envName === 'homologation' || envName === 'homolog' ? '_HML'
+            : envName === 'hml' || envName === 'homologation' || envName === 'homolog' || envName === 'stage' || envName === 'staging' || envName === 'uat' ? '_HML'
             : envName === 'prd' || envName === 'production' || envName === 'prod' ? '_PRD'
             : '';
 
@@ -456,6 +456,7 @@ jobs:
           IN_SMOKE_URL: ${{ inputs.smoke_url }}
           IN_SMOKE_RETRIES: ${{ inputs.smoke_retries }}
           IN_SMOKE_DELAY_SECONDS: ${{ inputs.smoke_delay_seconds }}
+          IN_PIPELINE_ENV: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -503,30 +504,54 @@ jobs:
             return fallback;
           };
 
+          const resolveEnvSuffix = (v) => {
+            const raw = String(v || '').trim();
+            if (!raw) return '';
+            const upper = raw.toUpperCase();
+            if (['DEV', 'HML', 'PRD'].includes(upper)) return upper;
+            const lower = raw.toLowerCase();
+            if (['dev', 'development'].includes(lower)) return 'DEV';
+            if (['hml', 'homologation', 'homolog', 'stage', 'staging', 'uat'].includes(lower)) return 'HML';
+            if (['prd', 'prod', 'production'].includes(lower)) return 'PRD';
+            return '';
+          };
+
+          const envSuffix = resolveEnvSuffix(process.env.IN_PIPELINE_ENV);
+          const scopedVar = (baseKey) => {
+            if (envSuffix) {
+              const scopedKey = `${baseKey}_${envSuffix}`;
+              const scopedValue = vars[scopedKey];
+              if (scopedValue !== undefined && scopedValue !== null && String(scopedValue).trim() !== '') {
+                return scopedValue;
+              }
+            }
+            return vars[baseKey];
+          };
+
           const normalizeDns = (value) => {
             const raw = pickString(value);
             if (!raw) return '';
             return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
           };
 
-          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, vars.DNS_NAME, vars.WEB_DNS));
+          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, scopedVar('DNS_NAME'), scopedVar('WEB_DNS')));
           const remoteDirFromDns = dnsName ? `/var/www/${dnsName}` : '';
           const defaultSmokeUrl = dnsName ? `https://${dnsName}` : '';
 
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
             dns_name: dnsName,
-            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
-            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
-            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
-            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
-            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR),
-            remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
-            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
-            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL, defaultSmokeUrl),
-            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
-            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
+            ssh_user: pickString(process.env.IN_SSH_USER, scopedVar('SSH_USER')),
+            ssh_host: pickString(process.env.IN_SSH_HOST, scopedVar('SSH_HOST')),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
+            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, scopedVar('REMOTE_DIR')),
+            remote_owner: pickString(process.env.IN_REMOTE_OWNER, scopedVar('REMOTE_OWNER'), '__AUTO__'),
+            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, scopedVar('RSYNC_EXCLUDES')),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, scopedVar('SMOKE_URL'), defaultSmokeUrl),
+            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, scopedVar('SMOKE_RETRIES')),
+            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, scopedVar('SMOKE_DELAY_SECONDS')),
           };
 
           for (const [k, v] of Object.entries(out)) {
@@ -597,6 +622,7 @@ jobs:
           IN_SMOKE_URL: ${{ inputs.smoke_url }}
           IN_SMOKE_RETRIES: ${{ inputs.smoke_retries }}
           IN_SMOKE_DELAY_SECONDS: ${{ inputs.smoke_delay_seconds }}
+          IN_PIPELINE_ENV: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -644,30 +670,54 @@ jobs:
             return fallback;
           };
 
+          const resolveEnvSuffix = (v) => {
+            const raw = String(v || '').trim();
+            if (!raw) return '';
+            const upper = raw.toUpperCase();
+            if (['DEV', 'HML', 'PRD'].includes(upper)) return upper;
+            const lower = raw.toLowerCase();
+            if (['dev', 'development'].includes(lower)) return 'DEV';
+            if (['hml', 'homologation', 'homolog', 'stage', 'staging', 'uat'].includes(lower)) return 'HML';
+            if (['prd', 'prod', 'production'].includes(lower)) return 'PRD';
+            return '';
+          };
+
+          const envSuffix = resolveEnvSuffix(process.env.IN_PIPELINE_ENV);
+          const scopedVar = (baseKey) => {
+            if (envSuffix) {
+              const scopedKey = `${baseKey}_${envSuffix}`;
+              const scopedValue = vars[scopedKey];
+              if (scopedValue !== undefined && scopedValue !== null && String(scopedValue).trim() !== '') {
+                return scopedValue;
+              }
+            }
+            return vars[baseKey];
+          };
+
           const normalizeDns = (value) => {
             const raw = pickString(value);
             if (!raw) return '';
             return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
           };
 
-          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, vars.DNS_NAME, vars.WEB_DNS));
+          const dnsName = normalizeDns(pickString(process.env.IN_DNS_NAME, scopedVar('DNS_NAME'), scopedVar('WEB_DNS')));
           const remoteDirFromDns = dnsName ? `/var/www/${dnsName}` : '';
           const defaultSmokeUrl = dnsName ? `https://${dnsName}` : '';
 
           const out = {
             app_name: pickString(process.env.IN_APP_NAME),
             dns_name: dnsName,
-            ssh_user: pickString(process.env.IN_SSH_USER, vars.SSH_USER),
-            ssh_host: pickString(process.env.IN_SSH_HOST, vars.SSH_HOST),
-            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, vars.SSH_REMOTE_PORT),
-            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, vars.SSH_KNOWN_HOSTS),
-            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(vars.REQUIRE_SSH_KNOWN_HOSTS, false),
-            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, vars.REMOTE_DIR),
-            remote_owner: pickString(process.env.IN_REMOTE_OWNER, vars.REMOTE_OWNER, '__AUTO__'),
-            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, vars.RSYNC_EXCLUDES),
-            smoke_url: pickString(process.env.IN_SMOKE_URL, vars.SMOKE_URL, defaultSmokeUrl),
-            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, vars.SMOKE_RETRIES),
-            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, vars.SMOKE_DELAY_SECONDS),
+            ssh_user: pickString(process.env.IN_SSH_USER, scopedVar('SSH_USER')),
+            ssh_host: pickString(process.env.IN_SSH_HOST, scopedVar('SSH_HOST')),
+            ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
+            ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
+            require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
+            remote_dir: dnsName ? remoteDirFromDns : pickString(process.env.IN_REMOTE_DIR, scopedVar('REMOTE_DIR')),
+            remote_owner: pickString(process.env.IN_REMOTE_OWNER, scopedVar('REMOTE_OWNER'), '__AUTO__'),
+            rsync_excludes: pickString(process.env.IN_RSYNC_EXCLUDES, scopedVar('RSYNC_EXCLUDES')),
+            smoke_url: pickString(process.env.IN_SMOKE_URL, scopedVar('SMOKE_URL'), defaultSmokeUrl),
+            smoke_retries: pickPositiveInt(12, process.env.IN_SMOKE_RETRIES, scopedVar('SMOKE_RETRIES')),
+            smoke_delay_seconds: pickNonNegativeInt(5, process.env.IN_SMOKE_DELAY_SECONDS, scopedVar('SMOKE_DELAY_SECONDS')),
           };
 
           for (const [k, v] of Object.entries(out)) {
