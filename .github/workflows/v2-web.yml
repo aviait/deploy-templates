@@ -340,10 +340,10 @@ jobs:
       run:
         shell: bash
         working-directory: ${{ inputs.working_directory }}
-    # steps:
-      # - uses: actions/checkout@v6
-      #   with:
-      #     token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
       # - name: Setup Node
       #   if: ${{ inputs.cache_dependency_path == '' }}
