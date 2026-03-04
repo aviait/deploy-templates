@@ -39,26 +39,26 @@ jobs:
     with:
       environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
       working_directory: apps/worker
-      node_version: ${{ vars.WORKER_NODE_VERSION || '22' }}
-      package_manager: ${{ vars.WORKER_PACKAGE_MANAGER || 'yarn' }}
-      pnpm_version: ${{ vars.WORKER_PNPM_VERSION || '9' }}
-      cache_dependency_path: ${{ vars.WORKER_CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
-      lint_cmd: ${{ vars.WORKER_LINT_CMD || 'yarn lint && yarn format:check' }}
-      typecheck_cmd: ${{ vars.WORKER_TYPECHECK_CMD || 'yarn typecheck' }}
-      test_cmd: ${{ vars.WORKER_TEST_CMD || 'yarn test' }}
-      dockerfile: ${{ vars.WORKER_DOCKERFILE || 'Dockerfile' }}
-      registry: ${{ vars.WORKER_REGISTRY || 'ghcr.io' }}
-      image_namespace: ${{ vars.WORKER_IMAGE_NAMESPACE }}
-      image_name: ${{ vars.WORKER_IMAGE_NAME }}
+      node_version: ${{ vars.NODE_VERSION || '22' }}
+      package_manager: ${{ vars.PACKAGE_MANAGER || 'yarn' }}
+      pnpm_version: ${{ vars.PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
+      lint_cmd: ${{ vars.LINT_CMD || 'yarn lint && yarn format:check' }}
+      typecheck_cmd: ${{ vars.TYPECHECK_CMD || 'yarn typecheck' }}
+      test_cmd: ${{ vars.TEST_CMD || 'yarn test' }}
+      dockerfile: ${{ vars.DOCKERFILE || 'Dockerfile' }}
+      registry: ${{ vars.REGISTRY || 'ghcr.io' }}
+      image_namespace: ${{ vars.IMAGE_NAMESPACE }}
+      image_name: ${{ vars.IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
-      inject_all_github_vars: ${{ vars.WORKER_INJECT_ALL_GITHUB_VARS != 'false' }}
-      github_vars_exclude: ${{ vars.WORKER_GITHUB_VARS_EXCLUDE }}
+      inject_all_github_vars: ${{ vars.INJECT_ALL_GITHUB_VARS != 'false' }}
+      github_vars_exclude: ${{ vars.GITHUB_VARS_EXCLUDE }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
       GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
       PEM_KEY: ${{ secrets.PEM_KEY }}
       DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
       DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
-      WORKER_RUN_ENVS_FILE: ${{ secrets.WORKER_RUN_ENVS_FILE }}
+      DOCKER_RUN_ENVS_FILE: ${{ secrets.DOCKER_RUN_ENVS_FILE }}

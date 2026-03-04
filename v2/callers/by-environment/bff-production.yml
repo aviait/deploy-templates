@@ -39,22 +39,22 @@ jobs:
     with:
       environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
       working_directory: apps/bff
-      node_version: ${{ vars.BFF_NODE_VERSION || '22' }}
-      package_manager: ${{ vars.BFF_PACKAGE_MANAGER || 'yarn' }}
-      pnpm_version: ${{ vars.BFF_PNPM_VERSION || '9' }}
-      cache_dependency_path: ${{ vars.BFF_CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
-      lint_cmd: ${{ vars.BFF_LINT_CMD || 'yarn lint && yarn format:check' }}
-      typecheck_cmd: ${{ vars.BFF_TYPECHECK_CMD || 'yarn typecheck' }}
-      test_cmd: ${{ vars.BFF_TEST_CMD || 'yarn test' }}
-      dockerfile: ${{ vars.BFF_DOCKERFILE || 'Dockerfile' }}
-      registry: ${{ vars.BFF_REGISTRY || 'ghcr.io' }}
-      image_namespace: ${{ vars.BFF_IMAGE_NAMESPACE }}
-      image_name: ${{ vars.BFF_IMAGE_NAME }}
+      node_version: ${{ vars.NODE_VERSION || '22' }}
+      package_manager: ${{ vars.PACKAGE_MANAGER || 'yarn' }}
+      pnpm_version: ${{ vars.PNPM_VERSION || '9' }}
+      cache_dependency_path: ${{ vars.CACHE_DEPENDENCY_PATH || 'yarn.lock' }}
+      lint_cmd: ${{ vars.LINT_CMD || 'yarn lint && yarn format:check' }}
+      typecheck_cmd: ${{ vars.TYPECHECK_CMD || 'yarn typecheck' }}
+      test_cmd: ${{ vars.TEST_CMD || 'yarn test' }}
+      dockerfile: ${{ vars.DOCKERFILE || 'Dockerfile' }}
+      registry: ${{ vars.REGISTRY || 'ghcr.io' }}
+      image_namespace: ${{ vars.IMAGE_NAMESPACE }}
+      image_name: ${{ vars.IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: true
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
-      inject_all_github_vars: ${{ vars.BFF_INJECT_ALL_GITHUB_VARS != 'false' }}
-      github_vars_exclude: ${{ vars.BFF_GITHUB_VARS_EXCLUDE }}
+      inject_all_github_vars: ${{ vars.INJECT_ALL_GITHUB_VARS != 'false' }}
+      github_vars_exclude: ${{ vars.GITHUB_VARS_EXCLUDE }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
       GIT_TOKEN: ${{ secrets.GIT_TOKEN }}

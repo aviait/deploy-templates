@@ -58,7 +58,7 @@ on:
         required: false
         type: string
         default: ""
-      worker_name:
+      container_name:
         required: false
         type: string
         default: ""
@@ -82,11 +82,11 @@ on:
         required: false
         type: boolean
         default: false
-      worker_run_envs:
+      docker_run_envs:
         required: false
         type: string
         default: ""
-      worker_extra_args:
+      docker_extra_args:
         required: false
         type: string
         default: ""
@@ -145,7 +145,7 @@ on:
         required: false
       DEPLOY_REGISTRY_PASSWORD:
         required: false
-      WORKER_RUN_ENVS_FILE:
+      DOCKER_RUN_ENVS_FILE:
         required: false
 
 jobs:
@@ -588,9 +588,9 @@ jobs:
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
           IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
           IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
-          IN_WORKER_NAME: ${{ inputs.worker_name }}
-          IN_WORKER_RUN_ENVS: ${{ inputs.worker_run_envs }}
-          IN_WORKER_EXTRA_ARGS: ${{ inputs.worker_extra_args }}
+          IN_CONTAINER_NAME: ${{ inputs.container_name }}
+          IN_DOCKER_RUN_ENVS: ${{ inputs.docker_run_envs }}
+          IN_DOCKER_EXTRA_ARGS: ${{ inputs.docker_extra_args }}
           IN_REMOTE_DOCKER_LOGIN: ${{ inputs.remote_docker_login }}
           IN_IMAGE_RETENTION_COUNT: ${{ inputs.image_retention_count }}
           IN_STARTUP_CHECK_RETRIES: ${{ inputs.startup_check_retries }}
@@ -678,9 +678,9 @@ jobs:
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
-            worker_name: pickString(process.env.IN_WORKER_NAME, scopedVar('WORKER_NAME'), process.env.IN_APP_NAME),
-            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, scopedVar('WORKER_RUN_ENVS')),
-            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, scopedVar('WORKER_EXTRA_ARGS')),
+            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME'), process.env.IN_APP_NAME),
+            docker_run_envs: pickString(process.env.IN_DOCKER_RUN_ENVS, scopedVar('DOCKER_RUN_ENVS')),
+            docker_extra_args: pickString(process.env.IN_DOCKER_EXTRA_ARGS, scopedVar('DOCKER_EXTRA_ARGS')),
             remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, toBool(scopedVar('REMOTE_DOCKER_LOGIN'), true)),
             image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, scopedVar('IMAGE_RETENTION_COUNT')),
             startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, scopedVar('STARTUP_CHECK_RETRIES')),
@@ -713,8 +713,8 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${{ secrets.WORKER_RUN_ENVS_FILE }}" ] && [ -z "${{ steps.resolve.outputs.worker_run_envs }}" ]; then
-            echo "::warning::worker_run_envs vazio e WORKER_RUN_ENVS_FILE não configurado. Secrets não são injetados automaticamente; use WORKER_RUN_ENVS_FILE para variáveis sensíveis."
+          if [ -z "${{ secrets.DOCKER_RUN_ENVS_FILE }}" ] && [ -z "${{ steps.resolve.outputs.docker_run_envs }}" ]; then
+            echo "::warning::docker_run_envs vazio e DOCKER_RUN_ENVS_FILE não configurado. Secrets não são injetados automaticamente; use DOCKER_RUN_ENVS_FILE para variáveis sensíveis."
           fi
 
       - name: Publish pre-deploy summary
@@ -725,7 +725,7 @@ jobs:
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
-            echo "- worker name: ${{ steps.resolve.outputs.worker_name }}"
+            echo "- container name: ${{ steps.resolve.outputs.container_name }}"
             echo "- registry auth required: ${{ steps.resolve.outputs.remote_docker_login }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -752,9 +752,9 @@ jobs:
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
           IN_SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
           IN_REQUIRE_SSH_KNOWN_HOSTS: ${{ inputs.require_ssh_known_hosts }}
-          IN_WORKER_NAME: ${{ inputs.worker_name }}
-          IN_WORKER_RUN_ENVS: ${{ inputs.worker_run_envs }}
-          IN_WORKER_EXTRA_ARGS: ${{ inputs.worker_extra_args }}
+          IN_CONTAINER_NAME: ${{ inputs.container_name }}
+          IN_DOCKER_RUN_ENVS: ${{ inputs.docker_run_envs }}
+          IN_DOCKER_EXTRA_ARGS: ${{ inputs.docker_extra_args }}
           IN_REMOTE_DOCKER_LOGIN: ${{ inputs.remote_docker_login }}
           IN_IMAGE_RETENTION_COUNT: ${{ inputs.image_retention_count }}
           IN_STARTUP_CHECK_RETRIES: ${{ inputs.startup_check_retries }}
@@ -842,9 +842,9 @@ jobs:
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
-            worker_name: pickString(process.env.IN_WORKER_NAME, scopedVar('WORKER_NAME'), process.env.IN_APP_NAME),
-            worker_run_envs: pickString(process.env.IN_WORKER_RUN_ENVS, scopedVar('WORKER_RUN_ENVS')),
-            worker_extra_args: pickString(process.env.IN_WORKER_EXTRA_ARGS, scopedVar('WORKER_EXTRA_ARGS')),
+            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME'), process.env.IN_APP_NAME),
+            docker_run_envs: pickString(process.env.IN_DOCKER_RUN_ENVS, scopedVar('DOCKER_RUN_ENVS')),
+            docker_extra_args: pickString(process.env.IN_DOCKER_EXTRA_ARGS, scopedVar('DOCKER_EXTRA_ARGS')),
             remote_docker_login: toBool(process.env.IN_REMOTE_DOCKER_LOGIN, toBool(scopedVar('REMOTE_DOCKER_LOGIN'), true)),
             image_retention_count: pickPositiveInt(5, process.env.IN_IMAGE_RETENTION_COUNT, scopedVar('IMAGE_RETENTION_COUNT')),
             startup_check_retries: pickPositiveInt(6, process.env.IN_STARTUP_CHECK_RETRIES, scopedVar('STARTUP_CHECK_RETRIES')),
@@ -1050,11 +1050,11 @@ jobs:
           SSH_USER: ${{ steps.resolve.outputs.ssh_user }}
           SSH_HOST: ${{ steps.resolve.outputs.ssh_host }}
           SSH_PORT: ${{ steps.resolve.outputs.ssh_remote_port }}
-          WORKER_NAME: ${{ steps.resolve.outputs.worker_name }}
-          WORKER_RUN_ENVS: ${{ steps.resolve.outputs.worker_run_envs }}
-          WORKER_RUN_ENVS_FILE_SECRET: ${{ secrets.WORKER_RUN_ENVS_FILE }}
+          CONTAINER_NAME: ${{ steps.resolve.outputs.container_name }}
+          DOCKER_RUN_ENVS: ${{ steps.resolve.outputs.docker_run_envs }}
+          DOCKER_RUN_ENVS_FILE_SECRET: ${{ secrets.DOCKER_RUN_ENVS_FILE }}
           AUTO_VARS_B64: ${{ steps.auto_vars.outputs.auto_vars_b64 }}
-          WORKER_EXTRA_ARGS: ${{ steps.resolve.outputs.worker_extra_args }}
+          DOCKER_EXTRA_ARGS: ${{ steps.resolve.outputs.docker_extra_args }}
           STARTUP_CHECK_RETRIES: ${{ steps.resolve.outputs.startup_check_retries }}
           STARTUP_CHECK_DELAY: ${{ steps.resolve.outputs.startup_check_delay_seconds }}
           IMAGE_RETENTION_COUNT: ${{ steps.resolve.outputs.image_retention_count }}
@@ -1189,22 +1189,22 @@ jobs:
           fi
           echo "TARGET_IMAGE=${TARGET_IMAGE}"
 
-          WORKER_RUN_ENVS_B64="$(printf '%s' "${WORKER_RUN_ENVS}" | base64 | tr -d '\n')"
+          DOCKER_RUN_ENVS_B64="$(printf '%s' "${DOCKER_RUN_ENVS}" | base64 | tr -d '\n')"
 
           TMP_ENV_FILE="$(mktemp)"
           trap 'rm -f "${TMP_ENV_FILE}"' EXIT
 
-          if [ -n "${WORKER_RUN_ENVS_FILE_SECRET}" ]; then
-            printf '%s\n' "${WORKER_RUN_ENVS_FILE_SECRET}" >> "${TMP_ENV_FILE}"
+          if [ -n "${DOCKER_RUN_ENVS_FILE_SECRET}" ]; then
+            printf '%s\n' "${DOCKER_RUN_ENVS_FILE_SECRET}" >> "${TMP_ENV_FILE}"
           fi
 
           if [ -n "${AUTO_VARS_B64}" ]; then
             printf '%s' "${AUTO_VARS_B64}" | base64 -d >> "${TMP_ENV_FILE}"
           fi
 
-          WORKER_RUN_ENVS_FILE_B64=""
+          DOCKER_RUN_ENVS_FILE_B64=""
           if [ -s "${TMP_ENV_FILE}" ]; then
-            WORKER_RUN_ENVS_FILE_B64="$(base64 -w0 "${TMP_ENV_FILE}")"
+            DOCKER_RUN_ENVS_FILE_B64="$(base64 -w0 "${TMP_ENV_FILE}")"
           fi
 
           REPOSITORY="${TARGET_IMAGE%:*}"
@@ -1221,10 +1221,10 @@ jobs:
             REGISTRY_USERNAME="${REGISTRY_USERNAME}" \
             REGISTRY_PASSWORD="${REGISTRY_PASSWORD}" \
             REMOTE_DOCKER_LOGIN="${REMOTE_DOCKER_LOGIN}" \
-            WORKER_NAME="${WORKER_NAME}" \
-            WORKER_RUN_ENVS_B64="${WORKER_RUN_ENVS_B64}" \
-            WORKER_RUN_ENVS_FILE_B64="${WORKER_RUN_ENVS_FILE_B64}" \
-            WORKER_EXTRA_ARGS="${WORKER_EXTRA_ARGS}" \
+            CONTAINER_NAME="${CONTAINER_NAME}" \
+            DOCKER_RUN_ENVS_B64="${DOCKER_RUN_ENVS_B64}" \
+            DOCKER_RUN_ENVS_FILE_B64="${DOCKER_RUN_ENVS_FILE_B64}" \
+            DOCKER_EXTRA_ARGS="${DOCKER_EXTRA_ARGS}" \
             STARTUP_CHECK_RETRIES="${STARTUP_CHECK_RETRIES}" \
             STARTUP_CHECK_DELAY="${STARTUP_CHECK_DELAY}" \
             IMAGE_RETENTION_COUNT="${IMAGE_RETENTION_COUNT}" \
@@ -1241,12 +1241,12 @@ jobs:
             fi
             echo "IMAGE_REF=${IMAGE_REF}"
             echo "REGISTRY=${REGISTRY}"
-            echo "WORKER_NAME=${WORKER_NAME}"
+            echo "CONTAINER_NAME=${CONTAINER_NAME}"
 
-            WORKER_RUN_ENVS="$(printf '%s' "${WORKER_RUN_ENVS_B64}" | base64 -d || true)"
+            DOCKER_RUN_ENVS="$(printf '%s' "${DOCKER_RUN_ENVS_B64}" | base64 -d || true)"
             TMP_ENV_FILE=""
-            DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${WORKER_NAME}")
-            WORKER_EXTRA_ARGS_ARRAY=()
+            DOCKER_RUN_ARGS=(-d --restart unless-stopped --name "${CONTAINER_NAME}")
+            DOCKER_EXTRA_ARGS_ARRAY=()
 
             cleanup_tmp_env_file() {
               if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
@@ -1255,13 +1255,13 @@ jobs:
             }
             trap cleanup_tmp_env_file EXIT
 
-            if [ -n "${WORKER_RUN_ENVS_FILE_B64}" ]; then
+            if [ -n "${DOCKER_RUN_ENVS_FILE_B64}" ]; then
               TMP_ENV_FILE="$(mktemp)"
-              printf '%s' "${WORKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
+              printf '%s' "${DOCKER_RUN_ENVS_FILE_B64}" | base64 -d > "${TMP_ENV_FILE}"
               DOCKER_RUN_ARGS+=(--env-file "${TMP_ENV_FILE}")
             fi
 
-            if [ -n "${WORKER_RUN_ENVS}" ]; then
+            if [ -n "${DOCKER_RUN_ENVS}" ]; then
               # Format supported:
               # - One per line: KEY=VALUE (recommended)
               # - Backward compatible: "-e KEY=VALUE" or "--env KEY=VALUE"
@@ -1279,11 +1279,11 @@ jobs:
                 else
                   DOCKER_RUN_ARGS+=(--env "${line}")
                 fi
-              done <<< "${WORKER_RUN_ENVS}"
+              done <<< "${DOCKER_RUN_ENVS}"
             fi
 
-            if [ -n "${WORKER_EXTRA_ARGS}" ]; then
-              read -r -a WORKER_EXTRA_ARGS_ARRAY <<< "${WORKER_EXTRA_ARGS}"
+            if [ -n "${DOCKER_EXTRA_ARGS}" ]; then
+              read -r -a DOCKER_EXTRA_ARGS_ARRAY <<< "${DOCKER_EXTRA_ARGS}"
             fi
 
             env_file_lines=0
@@ -1292,13 +1292,13 @@ jobs:
             fi
 
             inline_env_lines=0
-            if [ -n "${WORKER_RUN_ENVS}" ]; then
-              inline_env_lines="$(printf '%s\n' "${WORKER_RUN_ENVS}" | grep -vc '^[[:space:]]*$' || true)"
+            if [ -n "${DOCKER_RUN_ENVS}" ]; then
+              inline_env_lines="$(printf '%s\n' "${DOCKER_RUN_ENVS}" | grep -vc '^[[:space:]]*$' || true)"
             fi
 
             inline_env_keys=""
-            if [ -n "${WORKER_RUN_ENVS}" ]; then
-              inline_env_keys="$(printf '%s\n' "${WORKER_RUN_ENVS}" | awk '
+            if [ -n "${DOCKER_RUN_ENVS}" ]; then
+              inline_env_keys="$(printf '%s\n' "${DOCKER_RUN_ENVS}" | awk '
                 /^[[:space:]]*$/ { next }
                 /^[[:space:]]*#/ { next }
                 {
@@ -1337,17 +1337,17 @@ jobs:
 
             echo "docker run plan (sanitized):"
             echo "- image: ${IMAGE_REF}"
-            echo "- name: ${WORKER_NAME}"
+            echo "- name: ${CONTAINER_NAME}"
             echo "- env-file: $([ "${env_file_lines}" -gt 0 ] && echo "yes (lines=${env_file_lines})" || echo "no")"
             echo "- inline env: $([ "${inline_env_lines}" -gt 0 ] && echo "yes (lines=${inline_env_lines})" || echo "no")"
-            echo "- extra args provided: $([ -n "${WORKER_EXTRA_ARGS}" ] && echo "yes" || echo "no")"
+            echo "- extra args provided: $([ -n "${DOCKER_EXTRA_ARGS}" ] && echo "yes" || echo "no")"
             echo "- env keys (inline): ${inline_env_keys:-<none>}"
             echo "- env keys (env-file): ${env_file_keys:-<none>}"
-            preview="docker run -d --restart unless-stopped --name '${WORKER_NAME}'"
+            preview="docker run -d --restart unless-stopped --name '${CONTAINER_NAME}'"
             if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ]; then
               preview="${preview} --env-file <env-file>"
             fi
-            if [ -n "${WORKER_RUN_ENVS}" ]; then
+            if [ -n "${DOCKER_RUN_ENVS}" ]; then
               while IFS= read -r line; do
                 line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
                 [ -z "${line}" ] && continue
@@ -1364,9 +1364,9 @@ jobs:
                 if [ -n "${key}" ]; then
                   preview="${preview} --env '${key}=***'"
                 fi
-              done <<< "${WORKER_RUN_ENVS}"
+              done <<< "${DOCKER_RUN_ENVS}"
             fi
-            if [ -n "${WORKER_EXTRA_ARGS}" ]; then
+            if [ -n "${DOCKER_EXTRA_ARGS}" ]; then
               preview="${preview} [args redacted]"
             fi
             preview="${preview} '${IMAGE_REF}'"
@@ -1437,7 +1437,7 @@ jobs:
               done < "${TMP_ENV_FILE}" | sort
             fi
 
-            PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${WORKER_NAME}" 2>/dev/null || true)"
+            PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
               echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME}" --password-stdin
@@ -1445,24 +1445,24 @@ jobs:
 
             docker pull "${IMAGE_REF}"
 
-            docker stop "${WORKER_NAME}" || true
-            docker rm "${WORKER_NAME}" || true
+            docker stop "${CONTAINER_NAME}" || true
+            docker rm "${CONTAINER_NAME}" || true
 
-            if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}" "${WORKER_EXTRA_ARGS_ARRAY[@]}"; then
-              docker logs --tail 200 "${WORKER_NAME}" 2>/dev/null || true
+            if ! docker run "${DOCKER_RUN_ARGS[@]}" "${IMAGE_REF}" "${DOCKER_EXTRA_ARGS_ARRAY[@]}"; then
+              docker logs --tail 200 "${CONTAINER_NAME}" 2>/dev/null || true
               if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
+                docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${DOCKER_EXTRA_ARGS_ARRAY[@]}" || true
               fi
               exit 1
             fi
 
             echo "Container status (after docker run):"
-            docker ps -a --filter "name=${WORKER_NAME}" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' || true
-            docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${WORKER_NAME}" 2>/dev/null || true
-            container_env_keys="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${WORKER_NAME}" 2>/dev/null | cut -d= -f1 | sort -u | paste -sd ', ' - || true)"
+            docker ps -a --filter "name=${CONTAINER_NAME}" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' || true
+            docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} restarting={{.State.Restarting}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${CONTAINER_NAME}" 2>/dev/null || true
+            container_env_keys="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null | cut -d= -f1 | sort -u | paste -sd ', ' - || true)"
             echo "Container env keys (inspect): ${container_env_keys:-<unable to read>}"
             if [ -n "${TMP_ENV_FILE}" ] && [ -f "${TMP_ENV_FILE}" ] && [ "${env_file_lines}" -gt 0 ]; then
-              inspect_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${WORKER_NAME}" 2>/dev/null || true)"
+              inspect_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
               if [ -n "${inspect_env}" ]; then
                 echo "Container env (inspect, redacted, injected keys):"
                 while IFS= read -r key || [ -n "${key}" ]; do
@@ -1484,16 +1484,16 @@ jobs:
 
             attempt=1
             while [ "${attempt}" -le "${STARTUP_CHECK_RETRIES}" ]; do
-              if docker ps --filter "name=${WORKER_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+              if docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" --format '{{.ID}}' | grep -q .; then
                 break
               fi
               if [ "${attempt}" -eq "${STARTUP_CHECK_RETRIES}" ]; then
-                docker ps -a --filter "name=${WORKER_NAME}" || true
-                docker logs --tail 200 "${WORKER_NAME}" 2>/dev/null || true
-                docker stop "${WORKER_NAME}" || true
-                docker rm "${WORKER_NAME}" || true
+                docker ps -a --filter "name=${CONTAINER_NAME}" || true
+                docker logs --tail 200 "${CONTAINER_NAME}" 2>/dev/null || true
+                docker stop "${CONTAINER_NAME}" || true
+                docker rm "${CONTAINER_NAME}" || true
                 if [ -n "${PREVIOUS_IMAGE_ID}" ]; then
-                  docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${WORKER_EXTRA_ARGS_ARRAY[@]}" || true
+                  docker run "${DOCKER_RUN_ARGS[@]}" "${PREVIOUS_IMAGE_ID}" "${DOCKER_EXTRA_ARGS_ARRAY[@]}" || true
                 fi
                 exit 1
               fi
@@ -1524,8 +1524,8 @@ jobs:
             echo "- app: ${{ steps.resolve.outputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ref: \`${{ github.ref }}\`"
-            echo "- worker_run_envs provided: ${{ steps.resolve.outputs.worker_run_envs != '' && 'yes' || 'no' }}"
-            echo "- worker_run_envs_file secret provided: ${{ secrets.WORKER_RUN_ENVS_FILE != '' && 'yes' || 'no' }}"
+            echo "- docker_run_envs provided: ${{ steps.resolve.outputs.docker_run_envs != '' && 'yes' || 'no' }}"
+            echo "- docker_run_envs_file secret provided: ${{ secrets.DOCKER_RUN_ENVS_FILE != '' && 'yes' || 'no' }}"
             echo "- startup_check: retries=${{ steps.resolve.outputs.startup_check_retries }}, delay=${{ steps.resolve.outputs.startup_check_delay_seconds }}s"
             echo "- auto vars injected: ${{ steps.auto_vars.outputs.auto_vars_count }}"
             echo "- env suffix collapse: ${{ steps.auto_vars.outputs.env_suffix != '' && steps.auto_vars.outputs.env_suffix || '(unknown)' }} (mapped=${{ steps.auto_vars.outputs.mapped_env_suffix }}, skipped_other=${{ steps.auto_vars.outputs.skipped_other_env_suffix }})"

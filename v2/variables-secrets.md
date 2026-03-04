@@ -98,20 +98,20 @@ Workflow: `v2-bff.yml`
 ### Variaveis de caller (CI/build/publicacao)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `BFF_NODE_VERSION` | `22` | Versao do Node na pipeline. |
-| `BFF_PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
-| `BFF_PNPM_VERSION` | `9` | Versao do pnpm. |
-| `BFF_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
-| `BFF_LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
-| `BFF_TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
-| `BFF_TEST_CMD` | `yarn test` | Testes automatizados. |
-| `BFF_DOCKERFILE` | `Dockerfile` | Dockerfile usado no build da imagem. |
-| `BFF_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
-| `BFF_IMAGE_NAMESPACE` | vazio | Namespace quando `BFF_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
-| `BFF_IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
-| `BFF_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
-| `BFF_GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `BFF_GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
+| `NODE_VERSION` | `22` | Versao do Node na pipeline. |
+| `PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
+| `PNPM_VERSION` | `9` | Versao do pnpm. |
+| `CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
+| `LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
+| `TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
+| `TEST_CMD` | `yarn test` | Testes automatizados. |
+| `DOCKERFILE` | `Dockerfile` | Dockerfile usado no build da imagem. |
+| `REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
+| `IMAGE_NAMESPACE` | vazio | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
+| `IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
+| `INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
+| `GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
 
 Notas de release (tags):
 - Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
@@ -139,7 +139,7 @@ Notas de release (tags):
 | `STARTUP_CHECK_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de startup check. |
 | `PRUNE_RUNNER` | nao | `true` | Faz limpeza de docker no runner ao final. |
 | `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GITHUB_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao (caso nao use caller com `BFF_*`). |
+| `GITHUB_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao quando o caller nao usa mapeamento explicito de vars de build. |
 
 Nota de resolucao por ambiente (BFF):
 - Para as variaveis de deploy/runtime acima, o template prioriza automaticamente `*_DEV`, `*_HML` ou `*_PRD` conforme o `inputs.environment` (`dev|hml|prd`), e cai para a chave base sem sufixo quando o sufixado nao existir.
@@ -158,20 +158,20 @@ Workflow: `v2-worker.yml`
 ### Variaveis de caller (CI/build/publicacao)
 | Variavel | Default | O que faz |
 | --- | --- | --- |
-| `WORKER_NODE_VERSION` | `22` | Versao do Node na pipeline. |
-| `WORKER_PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
-| `WORKER_PNPM_VERSION` | `9` | Versao do pnpm. |
-| `WORKER_CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
-| `WORKER_LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
-| `WORKER_TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
-| `WORKER_TEST_CMD` | `yarn test` | Testes automatizados. |
-| `WORKER_DOCKERFILE` | `Dockerfile` | Dockerfile do worker. |
-| `WORKER_REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
-| `WORKER_IMAGE_NAMESPACE` | vazio | Namespace quando `WORKER_IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
-| `WORKER_IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
-| `WORKER_INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
-| `WORKER_GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `WORKER_GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
+| `NODE_VERSION` | `22` | Versao do Node na pipeline. |
+| `PACKAGE_MANAGER` | `yarn` (nos callers) | Gerenciador de pacotes. |
+| `PNPM_VERSION` | `9` | Versao do pnpm. |
+| `CACHE_DEPENDENCY_PATH` | `yarn.lock` | Lockfile para cache. |
+| `LINT_CMD` | `yarn lint && yarn format:check` | Lint de codigo. |
+| `TYPECHECK_CMD` | `yarn typecheck` | Typecheck da aplicacao. |
+| `TEST_CMD` | `yarn test` | Testes automatizados. |
+| `DOCKERFILE` | `Dockerfile` | Dockerfile do worker. |
+| `REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
+| `IMAGE_NAMESPACE` | vazio | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
+| `IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
+| `INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
+| `GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
 
 Notas de release (tags):
 - Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
@@ -184,9 +184,9 @@ Notas de release (tags):
 | `SSH_REMOTE_PORT` | nao | `22` | Porta SSH remota. |
 | `SSH_KNOWN_HOSTS` | condicional | - | Host key fixa para SSH. |
 | `REQUIRE_SSH_KNOWN_HOSTS` | nao | `false` | Exige known_hosts definido manualmente. |
-| `WORKER_NAME` | nao | `app_name` | Nome do container do worker. |
-| `WORKER_RUN_ENVS` | nao | vazio | Variaveis inline para `docker run` do worker. |
-| `WORKER_EXTRA_ARGS` | nao | vazio | Argumentos extras de `docker run` para worker. |
+| `CONTAINER_NAME` | nao | `app_name` | Nome do container do worker. |
+| `DOCKER_RUN_ENVS` | nao | vazio | Variaveis inline para `docker run` do worker. |
+| `DOCKER_EXTRA_ARGS` | nao | vazio | Argumentos extras de `docker run` para worker. |
 | `REMOTE_DOCKER_LOGIN` | nao | `true` | Login no registry no host remoto antes de pull. |
 | `IMAGE_RETENTION_COUNT` | nao | `5` | Numero de imagens antigas retidas no host. |
 | `STARTUP_CHECK_RETRIES` | nao | `6` | Tentativas para confirmar worker rodando. |
@@ -204,7 +204,7 @@ Nota de resolucao por ambiente (Worker):
 | `PEM_KEY` | sim (deploy) | Chave SSH para deploy remoto. |
 | `DEPLOY_REGISTRY_USERNAME` | condicional | Usuario do registry (usado para `docker login` no runner e/ou no host remoto quando `REMOTE_DOCKER_LOGIN=true`). |
 | `DEPLOY_REGISTRY_PASSWORD` | condicional | Senha/token do registry (Docker Hub: access token; GHCR: PAT com `read:packages`/`write:packages` conforme necessidade). |
-| `WORKER_RUN_ENVS_FILE` | opcional | Env-file multiline adicional aplicado no worker. |
+| `DOCKER_RUN_ENVS_FILE` | opcional | Env-file multiline adicional aplicado no worker. |
 
 ## App (React Native)
 Workflow: `v2-app.yml`

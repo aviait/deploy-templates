@@ -76,7 +76,7 @@ Vars recomendadas:
 - `CONTAINER_PORT` (fixo 80 no template v2).
 - `CONTAINER_NAME` (se não definir, usa `app_name`/repo).
 - `HEALTHCHECK_URL`, `HEALTHCHECK_RETRIES`, `HEALTHCHECK_DELAY_SECONDS`.
-- `BFF_INJECT_ALL_GITHUB_VARS`, `BFF_GITHUB_VARS_EXCLUDE`.
+- `INJECT_ALL_GITHUB_VARS`, `GITHUB_VARS_EXCLUDE`.
 
 Observacao de resolucao por ambiente (BFF):
 - Para variaveis de deploy/runtime (ex.: `CONTAINER_NAME`, `HOST_PORT`, `HEALTHCHECK_URL`), o template prioriza automaticamente sufixos `*_DEV`, `*_HML`, `*_PRD` conforme o ambiente informado no caller.
@@ -99,7 +99,7 @@ Arquivos callers:
 Ajustes obrigatórios no caller:
 - `paths`, `working_directory`, `dockerfile`, `registry`, `image_name`.
 - `image_namespace` (opcional): namespace quando `image_name` nao tiver `/` (Docker Hub).
-- Nome de worker opcional (`WORKER_NAME`); fallback automático para nome do repo.
+- Nome de worker opcional (`CONTAINER_NAME`); fallback automático para nome do repo.
 
 Vars mínimas por environment:
 - `SSH_USER`
@@ -111,10 +111,10 @@ Secrets mínimos por environment:
 - `DEPLOY_REGISTRY_PASSWORD`
 
 Vars recomendadas:
-- `WORKER_RUN_ENVS` e/ou `WORKER_RUN_ENVS_FILE`.
-- `WORKER_EXTRA_ARGS`.
+- `DOCKER_RUN_ENVS` e/ou `DOCKER_RUN_ENVS_FILE`.
+- `DOCKER_EXTRA_ARGS`.
 - `STARTUP_CHECK_RETRIES`, `STARTUP_CHECK_DELAY_SECONDS`.
-- `WORKER_INJECT_ALL_GITHUB_VARS`, `WORKER_GITHUB_VARS_EXCLUDE`.
+- `INJECT_ALL_GITHUB_VARS`, `GITHUB_VARS_EXCLUDE`.
 
 Comportamento:
 - Deploy remoto via SSH com `docker stop/rm` e `docker run` do novo worker.
