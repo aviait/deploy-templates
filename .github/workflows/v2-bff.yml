@@ -410,6 +410,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GIT_TOKEN || github.token }}
 
+      - name: Show vars and secrets before image build
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+          SECRET_CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
+          SECRET_GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+          SECRET_DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+          SECRET_DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+          SECRET_DOCKER_RUN_ENVS_FILE: ${{ secrets.DOCKER_RUN_ENVS_FILE }}
+          SECRET_PEM_KEY: ${{ secrets.PEM_KEY }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const vars = JSON.parse(process.env.VARS_JSON || '{}');
+          const keys = Object.keys(vars).sort();
+          console.log('Variables (name=value):');
+          if (keys.length === 0) {
+            console.log('(none)');
+          } else {
+            for (const key of keys) {
+              const value = vars[key];
+              if (typeof value === 'string') {
+                console.log(`${key}=${value}`);
+              } else {
+                console.log(`${key}=${JSON.stringify(value)}`);
+              }
+            }
+          }
+          NODE
+
+          echo "Secrets (name=masked):"
+          mask_secret() {
+            local name="$1"
+            local value="${2:-}"
+            if [ -n "$value" ]; then
+              echo "${name}=***"
+            else
+              echo "${name}=(not set)"
+            fi
+          }
+
+          mask_secret "CHECKOUT_TOKEN" "${SECRET_CHECKOUT_TOKEN:-}"
+          mask_secret "GIT_TOKEN" "${SECRET_GIT_TOKEN:-}"
+          mask_secret "DEPLOY_REGISTRY_USERNAME" "${SECRET_DEPLOY_REGISTRY_USERNAME:-}"
+          mask_secret "DEPLOY_REGISTRY_PASSWORD" "${SECRET_DEPLOY_REGISTRY_PASSWORD:-}"
+          mask_secret "DOCKER_RUN_ENVS_FILE" "${SECRET_DOCKER_RUN_ENVS_FILE:-}"
+          mask_secret "PEM_KEY" "${SECRET_PEM_KEY:-}"
+
       - name: Build BFF image
         uses: docker/build-push-action@v6
         with:
