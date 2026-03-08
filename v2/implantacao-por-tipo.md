@@ -76,7 +76,7 @@ Vars recomendadas:
 - `CONTAINER_PORT` (fixo 80 no template v2).
 - `CONTAINER_NAME` (se não definir, usa `app_name`/repo).
 - `HEALTHCHECK_URL`, `HEALTHCHECK_RETRIES`, `HEALTHCHECK_DELAY_SECONDS`.
-- `INJECT_ALL_GITHUB_VARS`, `GITHUB_VARS_EXCLUDE`.
+- `INJECT_ALL_GIT_VARS`, `GIT_VARS_EXCLUDE`.
 
 Observacao de resolucao por ambiente (BFF):
 - Para variaveis de deploy/runtime (ex.: `CONTAINER_NAME`, `HOST_PORT`, `HEALTHCHECK_URL`), o template prioriza automaticamente sufixos `*_DEV`, `*_HML`, `*_PRD` conforme o ambiente informado no caller.
@@ -114,7 +114,7 @@ Vars recomendadas:
 - `DOCKER_RUN_ENVS` e/ou `DOCKER_RUN_ENVS_FILE`.
 - `DOCKER_EXTRA_ARGS`.
 - `STARTUP_CHECK_RETRIES`, `STARTUP_CHECK_DELAY_SECONDS`.
-- `INJECT_ALL_GITHUB_VARS`, `GITHUB_VARS_EXCLUDE`.
+- `INJECT_ALL_GIT_VARS`, `GIT_VARS_EXCLUDE`.
 
 Comportamento:
 - Deploy remoto via SSH com `docker stop/rm` e `docker run` do novo worker.

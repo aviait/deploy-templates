@@ -50,8 +50,8 @@ jobs:
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
       enable_release: false
       deploy_on_tag_only: false
-      inject_all_github_vars: ${{ vars.INJECT_ALL_GITHUB_VARS != 'false' }}
-      github_vars_exclude: ${{ vars.GITHUB_VARS_EXCLUDE }}
+      inject_all_git_vars: ${{ vars.INJECT_ALL_GIT_VARS != 'false' }}
+      git_vars_exclude: ${{ vars.GIT_VARS_EXCLUDE }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}
       GIT_TOKEN: ${{ secrets.GIT_TOKEN }}

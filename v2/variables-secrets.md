@@ -109,9 +109,9 @@ Workflow: `v2-bff.yml`
 | `REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `IMAGE_NAMESPACE` | vazio | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
 | `IMAGE_NAME` | `{owner}/{repo}/bff` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`). |
-| `INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
-| `GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GITHUB_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
+| `INJECT_ALL_GIT_VARS` | `true` | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
+| `GIT_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GIT_VARS_EXCLUDE` | vazio | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). |
 
 Notas de release (tags):
 - Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
@@ -138,8 +138,8 @@ Notas de release (tags):
 | `STARTUP_CHECK_RETRIES` | nao | `6` | Tentativas para validar que o container subiu. |
 | `STARTUP_CHECK_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de startup check. |
 | `PRUNE_RUNNER` | nao | `true` | Faz limpeza de docker no runner ao final. |
-| `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GITHUB_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao quando o caller nao usa mapeamento explicito de vars de build. |
+| `GIT_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GIT_VARS_EXCLUDE` | nao | vazio | Mesmo papel de exclusao quando o caller nao usa mapeamento explicito de vars de build. |
 
 Nota de resolucao por ambiente (BFF):
 - Para as variaveis de deploy/runtime acima, o template prioriza automaticamente `*_DEV`, `*_HML` ou `*_PRD` conforme o `inputs.environment` (`dev|hml|prd`), e cai para a chave base sem sufixo quando o sufixado nao existir.
@@ -169,9 +169,9 @@ Workflow: `v2-worker.yml`
 | `REGISTRY` | `ghcr.io` | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). |
 | `IMAGE_NAMESPACE` | vazio | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). |
 | `IMAGE_NAME` | `{owner}/{repo}/worker` | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
-| `INJECT_ALL_GITHUB_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
-| `GITHUB_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GITHUB_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
+| `INJECT_ALL_GIT_VARS` | `true` | Injeta automaticamente `vars` no env-file do worker. |
+| `GIT_VARS_PREFIX` | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GIT_VARS_EXCLUDE` | vazio | Exclui chaves da injecao automatica. |
 
 Notas de release (tags):
 - Em tags `vX.Y.Z`, quando existe `package.json` em `working_directory`, o workflow valida que a versao do `package.json` corresponde a tag (ex.: `v1.2.3` e `package.json=1.2.3`) e usa `1.2.3` como tag principal da imagem de release (tambem publica `v1.2.3` e `latest`).
@@ -192,8 +192,8 @@ Notas de release (tags):
 | `STARTUP_CHECK_RETRIES` | nao | `6` | Tentativas para confirmar worker rodando. |
 | `STARTUP_CHECK_DELAY_SECONDS` | nao | `5` | Delay entre tentativas de startup check. |
 | `PRUNE_RUNNER` | nao | `true` | Limpeza de docker no runner ao final. |
-| `GITHUB_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GITHUB_VARS_EXCLUDE` | nao | vazio | Exclusao de chaves da injecao de vars (uso direto do workflow). |
+| `GIT_VARS_PREFIX` | nao | vazio | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
+| `GIT_VARS_EXCLUDE` | nao | vazio | Exclusao de chaves da injecao de vars (uso direto do workflow). |
 
 Nota de resolucao por ambiente (Worker):
 - Para as variaveis de deploy/runtime acima, o template prioriza automaticamente `*_DEV`, `*_HML` ou `*_PRD` conforme o `inputs.environment` (`dev|hml|prd`), e cai para a chave base sem sufixo quando o sufixado nao existir.
