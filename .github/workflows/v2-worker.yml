@@ -362,12 +362,33 @@ jobs:
         env:
           DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
           DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+          REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ steps.meta.outputs.registry }}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
             exit 1
+          fi
+
+          DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+
+          if [ -z "${DEPLOY_REGISTRY_USERNAME}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD}" ]; then
+            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD ficaram vazios após normalização."
+            echo "::error::Revise spaces/CRLF nas credenciais sincronizadas para o app."
+            exit 1
+          fi
+
+          if [ "${REGISTRY}" = "docker.io" ]; then
+            if ! curl -fsS \
+              --user "${DEPLOY_REGISTRY_USERNAME}:${DEPLOY_REGISTRY_PASSWORD}" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/alpine:pull" \
+              >/dev/null; then
+              echo "::error::Falha ao validar DEPLOY_REGISTRY_* no token service do Docker Hub."
+              echo "::error::O PAT/usuário sincronizado no app não autenticou em auth.docker.io."
+              exit 1
+            fi
           fi
 
       - name: Login registry
@@ -378,6 +399,9 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+
           if [ "${REGISTRY}" = "docker.io" ]; then
             LOGIN_CMD=(docker login -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
           else
@@ -562,12 +586,33 @@ jobs:
         env:
           DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
           DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+          REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ needs.build.outputs.registry }}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
             exit 1
+          fi
+
+          DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+
+          if [ -z "${DEPLOY_REGISTRY_USERNAME}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD}" ]; then
+            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD ficaram vazios após normalização."
+            echo "::error::Revise spaces/CRLF nas credenciais sincronizadas para o app."
+            exit 1
+          fi
+
+          if [ "${REGISTRY}" = "docker.io" ]; then
+            if ! curl -fsS \
+              --user "${DEPLOY_REGISTRY_USERNAME}:${DEPLOY_REGISTRY_PASSWORD}" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/alpine:pull" \
+              >/dev/null; then
+              echo "::error::Falha ao validar DEPLOY_REGISTRY_* no token service do Docker Hub."
+              echo "::error::O PAT/usuário sincronizado no app não autenticou em auth.docker.io."
+              exit 1
+            fi
           fi
 
       - name: Login registry
@@ -577,6 +622,9 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+
           if [ "${REGISTRY}" = "docker.io" ]; then
             LOGIN_CMD=(docker login -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
           else
@@ -1499,6 +1547,9 @@ jobs:
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
+              REGISTRY_USERNAME="$(printf '%s' "${REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              REGISTRY_PASSWORD="$(printf '%s' "${REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+
               if [ "${REGISTRY}" = "docker.io" ]; then
                 printf '%s' "${REGISTRY_PASSWORD}" | docker login -u "${REGISTRY_USERNAME}" --password-stdin
               else
