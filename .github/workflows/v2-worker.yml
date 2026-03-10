@@ -378,7 +378,13 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
-          if ! echo "${DEPLOY_REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin; then
+          if [ "${REGISTRY}" = "docker.io" ]; then
+            LOGIN_CMD=(docker login -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
+          else
+            LOGIN_CMD=(docker login "${REGISTRY}" -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
+          fi
+
+          if ! printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | "${LOGIN_CMD[@]}"; then
             echo "::error::Falha ao autenticar no registry ${REGISTRY} com DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD."
             echo "::error::Revalide as credenciais no provisionador e sincronize os secrets DEPLOY_REGISTRY_* do app antes de reenfileirar o deploy."
             exit 1
@@ -571,7 +577,13 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
-          if ! echo "${DEPLOY_REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin; then
+          if [ "${REGISTRY}" = "docker.io" ]; then
+            LOGIN_CMD=(docker login -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
+          else
+            LOGIN_CMD=(docker login "${REGISTRY}" -u "${DEPLOY_REGISTRY_USERNAME}" --password-stdin)
+          fi
+
+          if ! printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | "${LOGIN_CMD[@]}"; then
             echo "::error::Falha ao autenticar no registry ${REGISTRY} com DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD."
             echo "::error::Revalide as credenciais no provisionador e sincronize os secrets DEPLOY_REGISTRY_* do app antes de reenfileirar o deploy."
             exit 1
@@ -1487,7 +1499,11 @@ jobs:
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
-              echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME}" --password-stdin
+              if [ "${REGISTRY}" = "docker.io" ]; then
+                printf '%s' "${REGISTRY_PASSWORD}" | docker login -u "${REGISTRY_USERNAME}" --password-stdin
+              else
+                printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME}" --password-stdin
+              fi
             fi
 
             docker pull "${IMAGE_REF}"

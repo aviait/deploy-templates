@@ -20,7 +20,7 @@ Mapeamento de ambiente para sufixo:
 - `vars`: parametros de configuracao (host, portas, comandos, toggles).
 - `secrets`: dados sensiveis (chaves SSH, senha de registry, certificados mobile).
 - Autenticacao de registry nos workflows v2 usa somente `DEPLOY_REGISTRY_USERNAME` e
-  `DEPLOY_REGISTRY_PASSWORD`. `DOCKER_USERNAME`/`DOCKER_PASSWORD` nao autenticam os workflows v2.
+  `DEPLOY_REGISTRY_PASSWORD`.
 
 ## Segredos comuns (cross-template)
 
