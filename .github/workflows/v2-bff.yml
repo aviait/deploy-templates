@@ -392,6 +392,9 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME='tiaviait'
+          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
+
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ steps.meta.outputs.registry }}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
@@ -426,6 +429,9 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME='tiaviait'
+          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
+
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
 
@@ -616,6 +622,9 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME='tiaviait'
+          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
+
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ needs.build.outputs.registry }}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
@@ -649,6 +658,9 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
+          DEPLOY_REGISTRY_USERNAME='tiaviait'
+          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
+
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
 
@@ -1232,8 +1244,8 @@ jobs:
           IMAGE_RETENTION_COUNT: ${{ steps.resolve.outputs.image_retention_count }}
           REMOTE_DOCKER_LOGIN: ${{ steps.resolve.outputs.remote_docker_login }}
           CONTAINER_NAME: ${{ steps.resolve.outputs.container_name }}
-          REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
-          REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+          REGISTRY_USERNAME: tiaviait
+          REGISTRY_PASSWORD: dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM
         run: |
           set -euo pipefail
 
