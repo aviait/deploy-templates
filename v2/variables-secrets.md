@@ -123,12 +123,12 @@ Workflow: `v2-bff.yml`
 | `TYPECHECK_CMD`         | `yarn typecheck`                 | Typecheck da aplicacao.                                                                                                                                                                                                                                           |
 | `TEST_CMD`              | `yarn test`                      | Testes automatizados.                                                                                                                                                                                                                                             |
 | `DOCKERFILE`            | `Dockerfile`                     | Dockerfile usado no build da imagem.                                                                                                                                                                                                                              |
-| `REGISTRY`              | `ghcr.io`                        | Registry de imagem (ex.: `ghcr.io` ou `docker.io`).                                                                                                                                                                                                               |
-| `IMAGE_NAMESPACE`       | vazio                            | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub).                                                                                                                                                                                     |
-| `IMAGE_NAME`            | `{owner}/{repo}/bff`             | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/bff`; Docker Hub: `namespace/repo` (nao suporta `namespace/repo/sub`).                                                                     |
+| `REGISTRY`              | definido na plataforma (`repo_template_defaults`/repo-config) | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). O workflow v2 nao aplica fallback implicito.                                                                                                                                                                  |
+| `IMAGE_NAMESPACE`       | definido na plataforma (`repo_template_defaults`/repo-config) | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). Se faltar, o workflow falha cedo.                                                                                                                                                   |
+| `IMAGE_NAME`            | `{repo}` quando omitido no caller | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Se o valor nao incluir namespace, `IMAGE_NAMESPACE` precisa estar definido no repo-config/defaults da plataforma.                                                        |
 | `INJECT_ALL_GIT_VARS`   | `true`                           | Injeta automaticamente as `vars` do GitHub no env-file do container (`docker run`). Quando `environment` eh reconhecido como `dev/hml/prd`, chaves no formato `*_DEV`/`*_HML`/`*_PRD` sao normalizadas para a chave base (ex.: `S3_BUCKET_DEV` vira `S3_BUCKET`). |
 | `GIT_VARS_PREFIX`       | vazio                            | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais.                                                                                                                                                                                   |
-| `GIT_VARS_EXCLUDE`      | vazio                            | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`).                                                                                                                                                                                                          |
+| `GIT_VARS_EXCLUDE`      | vazio                            | Exclui vars da injecao automatica (`KEY` ou `PREFIX_*`). Nao controla sync/publicacao de GitHub secrets; `PEM_KEY` e `DEPLOY_REGISTRY_*` continuam secrets-only.                                                                                                 |
 
 Notas de release (tags):
 
@@ -158,7 +158,7 @@ Notas de release (tags):
 | `STARTUP_CHECK_DELAY_SECONDS` | nao          | `5`                    | Delay entre tentativas de startup check.                                                                               |
 | `PRUNE_RUNNER`                | nao          | `true`                 | Faz limpeza de docker no runner ao final.                                                                              |
 | `GIT_VARS_PREFIX`             | nao          | vazio                  | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais.                                        |
-| `GIT_VARS_EXCLUDE`            | nao          | vazio                  | Mesmo papel de exclusao quando o caller nao usa mapeamento explicito de vars de build.                                 |
+| `GIT_VARS_EXCLUDE`            | nao          | vazio                  | Mesmo papel de exclusao quando o caller nao usa mapeamento explicito de vars de build. Nao afeta GitHub secrets.      |
 
 Nota de resolucao por ambiente (BFF):
 
@@ -189,12 +189,12 @@ Workflow: `v2-worker.yml`
 | `TYPECHECK_CMD`         | `yarn typecheck`                 | Typecheck da aplicacao.                                                                                                                                       |
 | `TEST_CMD`              | `yarn test`                      | Testes automatizados.                                                                                                                                         |
 | `DOCKERFILE`            | `Dockerfile`                     | Dockerfile do worker.                                                                                                                                         |
-| `REGISTRY`              | `ghcr.io`                        | Registry de imagem (ex.: `ghcr.io` ou `docker.io`).                                                                                                           |
-| `IMAGE_NAMESPACE`       | vazio                            | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub).                                                                                 |
-| `IMAGE_NAME`            | `{owner}/{repo}/worker`          | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Exemplos: GHCR: `{owner}/{repo}/worker`; Docker Hub: `namespace/repo`. |
+| `REGISTRY`              | definido na plataforma (`repo_template_defaults`/repo-config) | Registry de imagem (ex.: `ghcr.io` ou `docker.io`). O workflow v2 nao aplica fallback implicito.                                                               |
+| `IMAGE_NAMESPACE`       | definido na plataforma (`repo_template_defaults`/repo-config) | Namespace quando `IMAGE_NAME` nao tiver `/` (ex.: usuario/org no Docker Hub). Se faltar, o workflow falha cedo.                                               |
+| `IMAGE_NAME`            | `{owner}/{repo}/worker` quando omitido no caller | Caminho do repositorio da imagem sem o host do registry (nao inclua `:tag`/`@digest`). Se o valor nao incluir namespace, `IMAGE_NAMESPACE` precisa estar definido no repo-config/defaults da plataforma. |
 | `INJECT_ALL_GIT_VARS`   | `true`                           | Injeta automaticamente `vars` no env-file do worker.                                                                                                          |
 | `GIT_VARS_PREFIX`       | vazio                            | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais.                                                                               |
-| `GIT_VARS_EXCLUDE`      | vazio                            | Exclui chaves da injecao automatica.                                                                                                                          |
+| `GIT_VARS_EXCLUDE`      | vazio                            | Exclui chaves da injecao automatica. Nao afeta `PEM_KEY` nem `DEPLOY_REGISTRY_*`, que seguem como GitHub secrets.                                          |
 
 Notas de release (tags):
 
@@ -218,7 +218,7 @@ Notas de release (tags):
 | `STARTUP_CHECK_DELAY_SECONDS` | nao          | `5`        | Delay entre tentativas de startup check.                                        |
 | `PRUNE_RUNNER`                | nao          | `true`     | Limpeza de docker no runner ao final.                                           |
 | `GIT_VARS_PREFIX`             | nao          | vazio      | (LEGADO) Mantido por compatibilidade, mas nao eh usado nos templates v2 atuais. |
-| `GIT_VARS_EXCLUDE`            | nao          | vazio      | Exclusao de chaves da injecao de vars (uso direto do workflow).                 |
+| `GIT_VARS_EXCLUDE`            | nao          | vazio      | Exclusao de chaves da injecao de vars (uso direto do workflow). Nao afeta GitHub secrets. |
 
 Nota de resolucao por ambiente (Worker):
 

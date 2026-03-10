@@ -49,7 +49,7 @@ on:
       registry:
         required: false
         type: string
-        default: "ghcr.io"
+        default: ""
       image_namespace:
         required: false
         type: string
@@ -243,9 +243,6 @@ jobs:
           SHA="${{ github.sha }}"
 
           REGISTRY_INPUT="${{ inputs.registry }}"
-          if [ -z "${REGISTRY_INPUT}" ]; then
-            REGISTRY_INPUT="ghcr.io"
-          fi
           REGISTRY="${REGISTRY_INPUT,,}"
 
           IMAGE_INPUT="${{ inputs.image_name }}"
@@ -253,7 +250,7 @@ jobs:
             if [ "${REGISTRY}" = "ghcr.io" ]; then
               IMAGE_INPUT="${REPO}/worker"
             else
-              IMAGE_INPUT="${REPO}"
+              IMAGE_INPUT="${REPO#*/}"
             fi
           fi
 
@@ -294,8 +291,14 @@ jobs:
             NS_INPUT="${{ inputs.image_namespace }}"
             if [ -n "${NS_INPUT}" ]; then
               IMAGE_PATH="${NS_INPUT}/${IMAGE_PATH}"
+            elif [ -z "${IMAGE_INPUT}" ]; then
+              echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME é derivado do nome do repositório."
+              echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME com namespace."
+              exit 1
             else
-              IMAGE_PATH="${REPO%%/*}/${IMAGE_PATH}"
+              echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME não inclui namespace."
+              echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME já no formato namespace/repo."
+              exit 1
             fi
           fi
 
@@ -1048,7 +1051,21 @@ jobs:
             return key === pattern;
           };
 
-          const excluded = (key) => patterns.some((p) => matchPattern(key, p));
+          const secretOnlyNames = new Set([
+            'DOCKER_RUN_ENVS_FILE',
+            'PEM_KEY',
+            'DEPLOY_REGISTRY_USERNAME',
+            'DEPLOY_REGISTRY_PASSWORD',
+            'DEPLOY_REGISTRY_USERNAME_DEV',
+            'DEPLOY_REGISTRY_PASSWORD_DEV',
+            'DEPLOY_REGISTRY_USERNAME_HML',
+            'DEPLOY_REGISTRY_PASSWORD_HML',
+            'DEPLOY_REGISTRY_USERNAME_PRD',
+            'DEPLOY_REGISTRY_PASSWORD_PRD',
+          ]);
+
+          const excluded = (key) =>
+            secretOnlyNames.has(key) || patterns.some((p) => matchPattern(key, p));
 
           let lines = [];
           let skippedInvalid = 0;
@@ -1182,7 +1199,8 @@ jobs:
             local working_directory="${IN_WORKING_DIRECTORY}"
 
             if [ -z "${registry_input}" ]; then
-              registry_input="ghcr.io"
+              echo "::error::registry vazio"
+              exit 1
             fi
             local registry="${registry_input,,}"
 
@@ -1190,7 +1208,7 @@ jobs:
               if [ "${registry}" = "ghcr.io" ]; then
                 image_input="${repo}/worker"
               else
-                image_input="${repo}"
+                image_input="${repo#*/}"
               fi
             fi
 
@@ -1229,7 +1247,9 @@ jobs:
               if [ -n "${image_namespace}" ]; then
                 image_path="${image_namespace}/${image_path}"
               else
-                image_path="${repo%%/*}/${image_path}"
+                echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME não inclui namespace."
+                echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME já no formato namespace/repo."
+                exit 1
               fi
             fi
 

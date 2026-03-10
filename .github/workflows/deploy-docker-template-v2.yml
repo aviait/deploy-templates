@@ -37,7 +37,7 @@ on:
       REGISTRY:
         required: false
         type: string
-        default: docker.io
+        default: ""
       IMAGE_NAMESPACE:
         required: false
         type: string
@@ -142,8 +142,8 @@ jobs:
 
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-      REGISTRY: ${{ inputs.REGISTRY != '' && inputs.REGISTRY || 'docker.io' }}
-      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE != '' && inputs.IMAGE_NAMESPACE || secrets.DOCKER_USERNAME }}
+      REGISTRY: ${{ inputs.REGISTRY }}
+      IMAGE_NAMESPACE: ${{ inputs.IMAGE_NAMESPACE }}
 
       SSH_USER: ${{ inputs.SSH_USER }}
       SSH_HOST: ${{ inputs.SSH_HOST }}
@@ -180,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          req_vars=(PROJECT_NAME ENVIRONMENT DOCKER_IMAGE SSH_USER SSH_HOST DOCKER_USERNAME DOCKER_PASSWORD HOST_PORT IMAGE_NAMESPACE)
+          req_vars=(PROJECT_NAME ENVIRONMENT DOCKER_IMAGE SSH_USER SSH_HOST DOCKER_USERNAME DOCKER_PASSWORD HOST_PORT REGISTRY IMAGE_NAMESPACE)
 
           for k in "${req_vars[@]}"; do
             v="${!k:-}"
@@ -507,7 +507,7 @@ jobs:
             PREVIOUS_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${SERVICE_NAME}" 2>/dev/null || true)"
 
             if [ "${REMOTE_DOCKER_LOGIN}" = "true" ]; then
-              echo "${DOCKER_PASSWORD}" | docker login "${REGISTRY}" -u "${DOCKER_USERNAME}" --password-stdin
+              printf '%s' "${DOCKER_PASSWORD}" | docker login "${REGISTRY}" -u "${DOCKER_USERNAME}" --password-stdin
             fi
 
             docker pull "${IMAGE_REF}"

@@ -44,7 +44,7 @@ jobs:
       typecheck_cmd: ${{ vars.TYPECHECK_CMD || 'yarn typecheck' }}
       test_cmd: ${{ vars.TEST_CMD || 'yarn test' }}
       dockerfile: ${{ vars.DOCKERFILE || 'Dockerfile' }}
-      registry: ${{ vars.REGISTRY || 'ghcr.io' }}
+      registry: ${{ vars.REGISTRY }}
       image_namespace: ${{ vars.IMAGE_NAMESPACE }}
       image_name: ${{ vars.IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}

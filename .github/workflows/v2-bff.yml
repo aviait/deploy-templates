@@ -49,7 +49,7 @@ on:
       registry:
         required: false
         type: string
-        default: "ghcr.io"
+        default: ""
       image_namespace:
         required: false
         type: string
@@ -267,18 +267,13 @@ jobs:
           SHA="${{ github.sha }}"
 
           REGISTRY_INPUT="${{ inputs.registry }}"
-          if [ -z "${REGISTRY_INPUT}" ]; then
-            REGISTRY_INPUT="ghcr.io"
-          fi
           REGISTRY="${REGISTRY_INPUT,,}"
 
           IMAGE_INPUT="${{ inputs.image_name }}"
+          IMAGE_NAME_SOURCE="input.image_name"
           if [ -z "${IMAGE_INPUT}" ]; then
-            if [ "${REGISTRY}" = "ghcr.io" ]; then
-              IMAGE_INPUT="${REPO}/bff"
-            else
-              IMAGE_INPUT="${REPO}"
-            fi
+            IMAGE_INPUT="${REPO#*/}"
+            IMAGE_NAME_SOURCE="default.repository_name"
           fi
 
           # Fail early on common misconfigurations that lead to "invalid reference format".
@@ -314,13 +309,16 @@ jobs:
           fi
 
           IMAGE_PATH="${IMAGE_INPUT}"
+          IMAGE_NAMESPACE_SOURCE="embedded_in_image_name"
           if ! printf '%s' "${IMAGE_PATH}" | grep -q '/'; then
             NS_INPUT="${{ inputs.image_namespace }}"
             if [ -n "${NS_INPUT}" ]; then
               IMAGE_PATH="${NS_INPUT}/${IMAGE_PATH}"
+              IMAGE_NAMESPACE_SOURCE="input.image_namespace"
             else
-              # Safe default to keep docker tags valid on PRs even when registry secrets are not available.
-              IMAGE_PATH="${REPO%%/*}/${IMAGE_PATH}"
+              echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME não inclui namespace."
+              echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME já no formato namespace/repo."
+              exit 1
             fi
           fi
 
@@ -373,6 +371,9 @@ jobs:
 
           {
             echo "registry=${REGISTRY}"
+            echo "image_repository=${IMAGE_PATH}"
+            echo "image_name_source=${IMAGE_NAME_SOURCE}"
+            echo "image_namespace_source=${IMAGE_NAMESPACE_SOURCE}"
             echo "stage_image=${STAGE_IMAGE}"
             echo "release_image=${RELEASE_IMAGE}"
             echo "release_tag=${RELEASE_TAG}"
@@ -381,6 +382,15 @@ jobs:
             echo "${STAGE_IMAGE}"
             echo "TAGLIST"
           } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Resolved image repository ${REGISTRY}/${IMAGE_PATH} (image_name_source=${IMAGE_NAME_SOURCE}, image_namespace_source=${IMAGE_NAMESPACE_SOURCE})."
+          {
+            echo "## build image resolution"
+            echo "- registry: ${REGISTRY}"
+            echo "- image_repository: ${IMAGE_PATH}"
+            echo "- image_name_source: ${IMAGE_NAME_SOURCE}"
+            echo "- image_namespace_source: ${IMAGE_NAMESPACE_SOURCE}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -392,8 +402,6 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
-          DEPLOY_REGISTRY_USERNAME='tiaviait'
-          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
 
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ steps.meta.outputs.registry }}."
@@ -429,9 +437,6 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
         run: |
           set -euo pipefail
-          DEPLOY_REGISTRY_USERNAME='tiaviait'
-          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
-
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
 
@@ -622,9 +627,6 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
-          DEPLOY_REGISTRY_USERNAME='tiaviait'
-          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
-
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
             echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ needs.build.outputs.registry }}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
@@ -658,9 +660,6 @@ jobs:
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           set -euo pipefail
-          DEPLOY_REGISTRY_USERNAME='tiaviait'
-          DEPLOY_REGISTRY_PASSWORD='dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM'
-
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
 
@@ -1115,7 +1114,21 @@ jobs:
             return key === pattern;
           };
 
-          const excluded = (key) => patterns.some((p) => matchPattern(key, p));
+          const secretOnlyNames = new Set([
+            'DOCKER_RUN_ENVS_FILE',
+            'PEM_KEY',
+            'DEPLOY_REGISTRY_USERNAME',
+            'DEPLOY_REGISTRY_PASSWORD',
+            'DEPLOY_REGISTRY_USERNAME_DEV',
+            'DEPLOY_REGISTRY_PASSWORD_DEV',
+            'DEPLOY_REGISTRY_USERNAME_HML',
+            'DEPLOY_REGISTRY_PASSWORD_HML',
+            'DEPLOY_REGISTRY_USERNAME_PRD',
+            'DEPLOY_REGISTRY_PASSWORD_PRD',
+          ]);
+
+          const excluded = (key) =>
+            secretOnlyNames.has(key) || patterns.some((p) => matchPattern(key, p));
 
           let lines = [];
           let skippedInvalid = 0;
@@ -1244,8 +1257,8 @@ jobs:
           IMAGE_RETENTION_COUNT: ${{ steps.resolve.outputs.image_retention_count }}
           REMOTE_DOCKER_LOGIN: ${{ steps.resolve.outputs.remote_docker_login }}
           CONTAINER_NAME: ${{ steps.resolve.outputs.container_name }}
-          REGISTRY_USERNAME: tiaviait
-          REGISTRY_PASSWORD: dckr_pat_d7DXN0tOwJfp7NlLYBOdfHhRrkM
+          REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -1259,17 +1272,10 @@ jobs:
             local semver_prefix="${IN_SEMVER_PREFIX}"
             local working_directory="${IN_WORKING_DIRECTORY}"
 
-            if [ -z "${registry_input}" ]; then
-              registry_input="ghcr.io"
-            fi
             local registry="${registry_input,,}"
 
             if [ -z "${image_input}" ]; then
-              if [ "${registry}" = "ghcr.io" ]; then
-                image_input="${repo}/bff"
-              else
-                image_input="${repo}"
-              fi
+              image_input="${repo#*/}"
             fi
 
             if [ -z "${registry}" ]; then
@@ -1307,7 +1313,9 @@ jobs:
               if [ -n "${image_namespace}" ]; then
                 image_path="${image_namespace}/${image_path}"
               else
-                image_path="${repo%%/*}/${image_path}"
+                echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME não inclui namespace."
+                echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME já no formato namespace/repo."
+                exit 1
               fi
             fi
 
