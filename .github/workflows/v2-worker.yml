@@ -246,11 +246,14 @@ jobs:
           REGISTRY="${REGISTRY_INPUT,,}"
 
           IMAGE_INPUT="${{ inputs.image_name }}"
+          IMAGE_NAME_SOURCE="input.image_name"
           if [ -z "${IMAGE_INPUT}" ]; then
             if [ "${REGISTRY}" = "ghcr.io" ]; then
               IMAGE_INPUT="${REPO}/worker"
+              IMAGE_NAME_SOURCE="default.repository_worker"
             else
               IMAGE_INPUT="${REPO#*/}"
+              IMAGE_NAME_SOURCE="default.repository_name"
             fi
           fi
 
@@ -287,10 +290,12 @@ jobs:
           fi
 
           IMAGE_PATH="${IMAGE_INPUT}"
+          IMAGE_NAMESPACE_SOURCE="embedded_in_image_name"
           if ! printf '%s' "${IMAGE_PATH}" | grep -q '/'; then
             NS_INPUT="${{ inputs.image_namespace }}"
             if [ -n "${NS_INPUT}" ]; then
               IMAGE_PATH="${NS_INPUT}/${IMAGE_PATH}"
+              IMAGE_NAMESPACE_SOURCE="input.image_namespace"
             elif [ -z "${IMAGE_INPUT}" ]; then
               echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME é derivado do nome do repositório."
               echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME com namespace."
@@ -349,6 +354,9 @@ jobs:
 
           {
             echo "registry=${REGISTRY}"
+            echo "image_repository=${IMAGE_PATH}"
+            echo "image_name_source=${IMAGE_NAME_SOURCE}"
+            echo "image_namespace_source=${IMAGE_NAMESPACE_SOURCE}"
             echo "stage_image=${STAGE_IMAGE}"
             echo "release_image=${RELEASE_IMAGE}"
             echo "release_tag=${RELEASE_TAG}"
@@ -357,6 +365,62 @@ jobs:
             echo "${STAGE_IMAGE}"
             echo "TAGLIST"
           } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Resolved image repository ${REGISTRY}/${IMAGE_PATH} (image_name_source=${IMAGE_NAME_SOURCE}, image_namespace_source=${IMAGE_NAMESPACE_SOURCE})."
+
+      - name: Validate build metadata outputs
+        env:
+          REGISTRY: ${{ steps.meta.outputs.registry }}
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          IMAGE_NAME_SOURCE: ${{ steps.meta.outputs.image_name_source }}
+          IMAGE_NAMESPACE_SOURCE: ${{ steps.meta.outputs.image_namespace_source }}
+          STAGE_IMAGE: ${{ steps.meta.outputs.stage_image }}
+          RELEASE_IMAGE: ${{ steps.meta.outputs.release_image }}
+          PUSH_IMAGE: ${{ steps.meta.outputs.push_image }}
+          IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${REGISTRY}" ]; then
+            echo "::error::registry vazio nos outputs do step Docker metadata."
+            exit 1
+          fi
+
+          if [ -z "${IMAGE_REPOSITORY}" ]; then
+            echo "::error::image_repository vazio nos outputs do step Docker metadata."
+            exit 1
+          fi
+
+          if [ -z "${STAGE_IMAGE}" ]; then
+            echo "::error::stage_image vazio nos outputs do step Docker metadata."
+            exit 1
+          fi
+
+          if [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; then
+            echo "::error::release_image vazio nos outputs do step Docker metadata para ref de tag."
+            exit 1
+          fi
+
+          RELEASE_IMAGE_DISPLAY="${RELEASE_IMAGE}"
+          if [ -z "${RELEASE_IMAGE_DISPLAY}" ]; then
+            RELEASE_IMAGE_DISPLAY="(not_applicable)"
+          fi
+
+          echo "::notice::Build outputs ready (registry=${REGISTRY}, image_repository=${IMAGE_REPOSITORY}, stage_image=${STAGE_IMAGE}, release_image=${RELEASE_IMAGE_DISPLAY}, push_image=${PUSH_IMAGE}, image_name_source=${IMAGE_NAME_SOURCE}, image_namespace_source=${IMAGE_NAMESPACE_SOURCE})."
+          {
+            echo "## build image resolution"
+            echo "- workflow_ref: ${WORKFLOW_REF}"
+            echo "- workflow_sha: ${WORKFLOW_SHA}"
+            echo "- registry: ${REGISTRY}"
+            echo "- image_repository: ${IMAGE_REPOSITORY}"
+            echo "- image_name_source: ${IMAGE_NAME_SOURCE}"
+            echo "- image_namespace_source: ${IMAGE_NAMESPACE_SOURCE}"
+            echo "- stage_image: ${STAGE_IMAGE}"
+            echo "- release_image: ${RELEASE_IMAGE_DISPLAY}"
+            echo "- push_image: ${PUSH_IMAGE}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -585,6 +649,32 @@ jobs:
     outputs:
       release_image: ${{ steps.tag_image.outputs.release_image }}
     steps:
+      - name: Validate build outputs for release
+        env:
+          REGISTRY: ${{ needs.build.outputs.registry }}
+          STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
+          RELEASE_IMAGE: ${{ needs.build.outputs.release_image }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${REGISTRY}" ]; then
+            echo "::error::registry vazio recebido de needs.build.outputs.registry no job release."
+            exit 1
+          fi
+
+          if [ -z "${STAGE_IMAGE}" ]; then
+            echo "::error::stage_image vazio recebido de needs.build.outputs.stage_image no job release."
+            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            exit 1
+          fi
+
+          if [ -z "${RELEASE_IMAGE}" ]; then
+            echo "::error::release_image vazio recebido de needs.build.outputs.release_image no job release."
+            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            exit 1
+          fi
+
       - name: Validate registry credentials
         env:
           DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
@@ -1165,14 +1255,8 @@ jobs:
           STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
           RELEASE_IMAGE: ${{ needs.release.outputs.release_image }}
           IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
-          IN_REGISTRY: ${{ inputs.registry }}
-          IN_IMAGE_NAME: ${{ inputs.image_name }}
-          IN_IMAGE_NAMESPACE: ${{ inputs.image_namespace }}
-          IN_SEMVER_PREFIX: ${{ inputs.semver_prefix }}
-          IN_WORKING_DIRECTORY: ${{ inputs.working_directory }}
-          GIT_REF: ${{ github.ref }}
-          GIT_SHA: ${{ github.sha }}
-          GIT_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
           SSH_USER: ${{ steps.resolve.outputs.ssh_user }}
           SSH_HOST: ${{ steps.resolve.outputs.ssh_host }}
           SSH_PORT: ${{ steps.resolve.outputs.ssh_remote_port }}
@@ -1190,115 +1274,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          compute_images() {
-            local ref="${GIT_REF}"
-            local sha="${GIT_SHA}"
-            local repo="${GIT_REPOSITORY}"
-            local registry_input="${IN_REGISTRY}"
-            local image_input="${IN_IMAGE_NAME}"
-            local image_namespace="${IN_IMAGE_NAMESPACE}"
-            local semver_prefix="${IN_SEMVER_PREFIX}"
-            local working_directory="${IN_WORKING_DIRECTORY}"
+          RELEASE_IMAGE_DISPLAY="${RELEASE_IMAGE}"
+          if [ -z "${RELEASE_IMAGE_DISPLAY}" ]; then
+            RELEASE_IMAGE_DISPLAY="(not_applicable)"
+          fi
 
-            if [ -z "${registry_input}" ]; then
-              echo "::error::registry vazio"
-              exit 1
-            fi
-            local registry="${registry_input,,}"
-
-            if [ -z "${image_input}" ]; then
-              if [ "${registry}" = "ghcr.io" ]; then
-                image_input="${repo}/worker"
-              else
-                image_input="${repo#*/}"
-              fi
-            fi
-
-            if [ -z "${registry}" ]; then
-              echo "::error::registry vazio"
-              exit 1
-            fi
-            if printf '%s' "${registry}" | grep -Eq '://|/|[[:space:]]'; then
-              echo "::error::registry invalido: '${registry}'. Use apenas o host (ex.: ghcr.io, docker.io, registry.exemplo.com:5000), sem 'https://' e sem '/'."
-              exit 1
-            fi
-
-            if printf '%s' "${image_input}" | grep -Eq '://|[[:space:]]'; then
-              echo "::error::image_name invalido: '${image_input}'. Nao use URL e nao use espacos."
-              exit 1
-            fi
-            if printf '%s' "${image_input}" | grep -Eq '[@:]'; then
-              echo "::error::image_name nao deve conter tag/digest (':' ou '@'). Informe somente o repositorio (ex.: 'aviait/tei-worker' ou '${repo}/worker')."
-              exit 1
-            fi
-            local first_segment="${image_input%%/*}"
-            if [ "${first_segment}" != "${image_input}" ]; then
-              if printf '%s' "${first_segment}" | grep -Eq '[\\.:]' || [ "${first_segment}" = "localhost" ]; then
-                echo "::error::image_name nao deve incluir o registry host (ex.: 'ghcr.io/...'). Use o input registry para isso."
-                exit 1
-              fi
-            fi
-
-            if [ -n "${image_namespace}" ] && printf '%s' "${image_namespace}" | grep -Eq '[:/@]|[[:space:]]'; then
-              echo "::error::image_namespace invalido: '${image_namespace}'. Use apenas o namespace (ex.: aviait), sem '/', ':', '@' e sem espacos."
-              exit 1
-            fi
-
-            local image_path="${image_input}"
-            if ! printf '%s' "${image_path}" | grep -q '/'; then
-              if [ -n "${image_namespace}" ]; then
-                image_path="${image_namespace}/${image_path}"
-              else
-                echo "::error::IMAGE_NAMESPACE obrigatório quando IMAGE_NAME não inclui namespace."
-                echo "::error::Configure IMAGE_NAMESPACE na plataforma (repo-config/defaults) ou informe IMAGE_NAME já no formato namespace/repo."
-                exit 1
-              fi
-            fi
-
-            if [ "${registry}" = "docker.io" ]; then
-              local slash_count
-              slash_count="$(printf '%s' "${image_path}" | awk -F/ '{print NF-1}')"
-              if [ "${slash_count}" -ne 1 ]; then
-                echo "::error::Para Docker Hub (docker.io), a imagem deve ser no formato 'namespace/repo'. Recebido: '${image_path}'."
-                echo "::error::Sugestao: defina image_name como 'namespace/repo' (ex.: 'aviait/tei-worker') e opcionalmente use image_namespace."
-                exit 1
-              fi
-            fi
-
-            local image="${registry}/${image_path}"
-            image="${image,,}"
-            local sha_tag="sha-${sha::12}"
-            COMPUTED_STAGE_IMAGE="${image}:${sha_tag}"
-            COMPUTED_RELEASE_IMAGE=""
-
-            if [[ "${ref}" == refs/tags/${semver_prefix}* ]]; then
-              local git_tag="${ref#refs/tags/}"
-              local pkg_json="${working_directory}/package.json"
-              local pkg_version=""
-              if [ -f "${pkg_json}" ]; then
-                pkg_version="$(python3 -c "import json,sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('version','')).strip())" "${pkg_json}" 2>/dev/null || true)"
-              fi
-
-              local release_tag="${git_tag}"
-              if [ -n "${pkg_version}" ]; then
-                if [ "${git_tag}" != "${semver_prefix}${pkg_version}" ] && [ "${git_tag}" != "${pkg_version}" ]; then
-                  echo "::error::Tag '${git_tag}' nao corresponde a versao do package.json ('${pkg_version}'). Esperado '${semver_prefix}${pkg_version}'."
-                  exit 1
-                fi
-                release_tag="${pkg_version}"
-              fi
-
-              COMPUTED_RELEASE_IMAGE="${image}:${release_tag}"
-            fi
-          }
+          echo "::notice::Deploy inputs received (stage_image=${STAGE_IMAGE:-<empty>}, release_image=${RELEASE_IMAGE_DISPLAY}, service_name=${CONTAINER_NAME}, remote_docker_login=${REMOTE_DOCKER_LOGIN})."
+          {
+            echo "## deploy input contract"
+            echo "- workflow_ref: ${WORKFLOW_REF}"
+            echo "- workflow_sha: ${WORKFLOW_SHA}"
+            echo "- incoming_stage_image: ${STAGE_IMAGE:-<empty>}"
+            echo "- incoming_release_image: ${RELEASE_IMAGE_DISPLAY}"
+            echo "- service_name: ${CONTAINER_NAME}"
+            echo "- remote_docker_login: ${REMOTE_DOCKER_LOGIN}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -z "${STAGE_IMAGE}" ]; then
-            echo "::error::stage_image vazio nos outputs do job build. O deploy exige a imagem produzida pelo build; nao ha fallback por recomputacao."
+            echo "::error::stage_image vazio recebido de needs.build.outputs.stage_image."
+            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
             exit 1
           fi
 
           if [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; then
-            echo "::error::release_image vazio nos outputs do job release para deploy por tag. Nao ha fallback por recomputacao."
+            echo "::error::release_image vazio recebido de needs.release.outputs.release_image para deploy por tag."
+            echo "::error::O contrato entre os jobs build e release está quebrado; valide os outputs declarados do reusable workflow ${WORKFLOW_REF}."
             exit 1
           fi
 
@@ -1690,6 +1690,8 @@ jobs:
             echo "- ref: \`${{ github.ref }}\`"
             echo "- event: \`${{ github.event_name }}\`"
             echo "- environment: \`${{ inputs.environment }}\`"
+            echo "- workflow_ref: \`${{ github.workflow_ref }}\`"
+            echo "- workflow_sha: \`${{ github.workflow_sha }}\`"
             echo ""
             echo "| Job | Result |"
             echo "|---|---|"
