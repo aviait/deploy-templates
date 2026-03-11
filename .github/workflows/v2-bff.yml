@@ -247,11 +247,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      stage_image: ${{ steps.meta.outputs.stage_image }}
-      release_image: ${{ steps.meta.outputs.release_image }}
-      release_tag: ${{ steps.meta.outputs.release_tag }}
-      registry: ${{ steps.meta.outputs.registry }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -395,8 +390,8 @@ jobs:
           RELEASE_IMAGE: ${{ steps.meta.outputs.release_image }}
           PUSH_IMAGE: ${{ steps.meta.outputs.push_image }}
           IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
 
@@ -428,8 +423,8 @@ jobs:
           echo "::notice::Build outputs ready (registry=${REGISTRY}, image_repository=${IMAGE_REPOSITORY}, stage_image=${STAGE_IMAGE}, release_image=${RELEASE_IMAGE_DISPLAY}, push_image=${PUSH_IMAGE}, image_name_source=${IMAGE_NAME_SOURCE}, image_namespace_source=${IMAGE_NAMESPACE_SOURCE})."
           {
             echo "## build image resolution"
-            echo "- workflow_ref: ${WORKFLOW_REF}"
-            echo "- workflow_sha: ${WORKFLOW_SHA}"
+            echo "- caller_workflow_ref: ${CALLER_WORKFLOW_REF}"
+            echo "- caller_workflow_sha: ${CALLER_WORKFLOW_SHA}"
             echo "- registry: ${REGISTRY}"
             echo "- image_repository: ${IMAGE_REPOSITORY}"
             echo "- image_name_source: ${IMAGE_NAME_SOURCE}"
@@ -561,6 +556,10 @@ jobs:
           set -euo pipefail
           cat > "$RUNNER_TEMP/bff-image.json" <<JSON
           {
+            "registry": "${{ steps.meta.outputs.registry }}",
+            "image_repository": "${{ steps.meta.outputs.image_repository }}",
+            "image_name_source": "${{ steps.meta.outputs.image_name_source }}",
+            "image_namespace_source": "${{ steps.meta.outputs.image_namespace_source }}",
             "stage_image": "${{ steps.meta.outputs.stage_image }}",
             "release_image": "${{ steps.meta.outputs.release_image }}",
             "release_tag": "${{ steps.meta.outputs.release_tag }}",
@@ -664,32 +663,53 @@ jobs:
     permissions:
       contents: write
       packages: write
-    outputs:
-      release_image: ${{ steps.tag_image.outputs.release_image }}
     steps:
-      - name: Validate build outputs for release
+      - uses: actions/download-artifact@v4
+        with:
+          name: bff-image-metadata
+          path: ${{ runner.temp }}
+
+      - name: Validate image metadata artifact for release
         env:
-          REGISTRY: ${{ needs.build.outputs.registry }}
-          STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
-          RELEASE_IMAGE: ${{ needs.build.outputs.release_image }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IMAGE_METADATA_PATH: ${{ runner.temp }}/bff-image.json
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
 
+          if [ ! -f "${IMAGE_METADATA_PATH}" ]; then
+            echo "::error::Artifact de metadata da imagem ausente em ${IMAGE_METADATA_PATH}."
+            echo "::error::O job build precisa publicar bff-image.json com stage_image/release_image."
+            exit 1
+          fi
+
+          eval "$(
+            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as fp:
+                data = json.load(fp)
+
+            for key in ("registry", "stage_image", "release_image"):
+                value = str(data.get(key, "") or "").strip()
+                print(f"{key.upper()}={value}")
+            PY
+          )"
+
           if [ -z "${REGISTRY}" ]; then
-            echo "::error::registry vazio recebido de needs.build.outputs.registry no job release."
+            echo "::error::registry vazio no artifact de metadata da imagem."
             exit 1
           fi
 
           if [ -z "${STAGE_IMAGE}" ]; then
-            echo "::error::stage_image vazio recebido de needs.build.outputs.stage_image no job release."
-            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            echo "::error::stage_image vazio no artifact de metadata da imagem."
+            echo "::error::O contrato do build agora depende do artifact bff-image.json; valide o step Save image metadata no caller ${CALLER_WORKFLOW_REF}."
             exit 1
           fi
 
           if [ -z "${RELEASE_IMAGE}" ]; then
-            echo "::error::release_image vazio recebido de needs.build.outputs.release_image no job release."
-            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            echo "::error::release_image vazio no artifact de metadata da imagem para ref de tag."
+            echo "::error::O contrato do build agora depende do artifact bff-image.json; valide o step Save image metadata no caller ${CALLER_WORKFLOW_REF}."
             exit 1
           fi
 
@@ -697,11 +717,23 @@ jobs:
         env:
           DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
           DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
-          REGISTRY: ${{ needs.build.outputs.registry }}
+          IMAGE_METADATA_PATH: ${{ runner.temp }}/bff-image.json
         run: |
           set -euo pipefail
+          REGISTRY="$(
+            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as fp:
+                data = json.load(fp)
+
+            print(str(data.get("registry", "") or "").strip())
+            PY
+          )"
+
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
-            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${{ needs.build.outputs.registry }}."
+            echo "::error::DEPLOY_REGISTRY_USERNAME/DEPLOY_REGISTRY_PASSWORD obrigatórios para autenticar no registry ${REGISTRY}."
             echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD não são usados pelo workflow v2."
             exit 1
           fi
@@ -730,9 +762,21 @@ jobs:
         env:
           DEPLOY_REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
           DEPLOY_REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
-          REGISTRY: ${{ needs.build.outputs.registry }}
+          IMAGE_METADATA_PATH: ${{ runner.temp }}/bff-image.json
         run: |
           set -euo pipefail
+          REGISTRY="$(
+            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as fp:
+                data = json.load(fp)
+
+            print(str(data.get("registry", "") or "").strip())
+            PY
+          )"
+
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DEPLOY_REGISTRY_PASSWORD="$(printf '%s' "${DEPLOY_REGISTRY_PASSWORD}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
 
@@ -750,10 +794,23 @@ jobs:
 
       - name: Tag and publish semver image
         id: tag_image
+        env:
+          IMAGE_METADATA_PATH: ${{ runner.temp }}/bff-image.json
         run: |
           set -euo pipefail
-          STAGE_IMAGE="${{ needs.build.outputs.stage_image }}"
-          RELEASE_IMAGE="${{ needs.build.outputs.release_image }}"
+          eval "$(
+            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as fp:
+                data = json.load(fp)
+
+            for key in ("stage_image", "release_image"):
+                value = str(data.get(key, "") or "").strip()
+                print(f"{key.upper()}={value}")
+            PY
+          )"
 
           if [ -z "${RELEASE_IMAGE}" ]; then
             echo "::error::release_image vazio para tag de release"
@@ -775,11 +832,6 @@ jobs:
             docker push "${GIT_RELEASE_IMAGE}"
           fi
           echo "release_image=${RELEASE_IMAGE}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: bff-image-metadata
-          path: ${{ runner.temp }}
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -1301,13 +1353,16 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_b64=${b64}\n`);
           NODE
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: bff-image-metadata
+          path: ${{ runner.temp }}
+
       - name: Deploy container via SSH
         env:
-          STAGE_IMAGE: ${{ needs.build.outputs.stage_image }}
-          RELEASE_IMAGE: ${{ needs.release.outputs.release_image }}
           IS_TAG: ${{ startsWith(github.ref, format('refs/tags/{0}', inputs.semver_prefix)) }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
           SSH_USER: ${{ steps.resolve.outputs.ssh_user }}
           SSH_HOST: ${{ steps.resolve.outputs.ssh_host }}
           SSH_PORT: ${{ steps.resolve.outputs.ssh_remote_port }}
@@ -1328,8 +1383,29 @@ jobs:
           CONTAINER_NAME: ${{ steps.resolve.outputs.container_name }}
           REGISTRY_USERNAME: ${{ secrets.DEPLOY_REGISTRY_USERNAME }}
           REGISTRY_PASSWORD: ${{ secrets.DEPLOY_REGISTRY_PASSWORD }}
+          IMAGE_METADATA_PATH: ${{ runner.temp }}/bff-image.json
         run: |
           set -euo pipefail
+
+          if [ ! -f "${IMAGE_METADATA_PATH}" ]; then
+            echo "::error::Artifact de metadata da imagem ausente em ${IMAGE_METADATA_PATH}."
+            echo "::error::O deploy depende do artifact bff-image.json publicado pelo job build."
+            exit 1
+          fi
+
+          eval "$(
+            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as fp:
+                data = json.load(fp)
+
+            for key in ("stage_image", "release_image"):
+                value = str(data.get(key, "") or "").strip()
+                print(f"{key.upper()}={value}")
+            PY
+          )"
 
           RELEASE_IMAGE_DISPLAY="${RELEASE_IMAGE}"
           if [ -z "${RELEASE_IMAGE_DISPLAY}" ]; then
@@ -1339,8 +1415,8 @@ jobs:
           echo "::notice::Deploy inputs received (stage_image=${STAGE_IMAGE:-<empty>}, release_image=${RELEASE_IMAGE_DISPLAY}, service_name=${CONTAINER_NAME}, host_port=${HOST_PORT}, container_port=${CONTAINER_PORT})."
           {
             echo "## deploy input contract"
-            echo "- workflow_ref: ${WORKFLOW_REF}"
-            echo "- workflow_sha: ${WORKFLOW_SHA}"
+            echo "- caller_workflow_ref: ${CALLER_WORKFLOW_REF}"
+            echo "- caller_workflow_sha: ${CALLER_WORKFLOW_SHA}"
             echo "- incoming_stage_image: ${STAGE_IMAGE:-<empty>}"
             echo "- incoming_release_image: ${RELEASE_IMAGE_DISPLAY}"
             echo "- service_name: ${CONTAINER_NAME}"
@@ -1349,14 +1425,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -z "${STAGE_IMAGE}" ]; then
-            echo "::error::stage_image vazio recebido de needs.build.outputs.stage_image."
-            echo "::error::O contrato de outputs do job build está quebrado; valide o step Docker metadata e os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            echo "::error::stage_image vazio no artifact de metadata da imagem."
+            echo "::error::O deploy depende do artifact bff-image.json; valide o step Save image metadata no caller ${CALLER_WORKFLOW_REF}."
             exit 1
           fi
 
           if [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; then
-            echo "::error::release_image vazio recebido de needs.release.outputs.release_image para deploy por tag."
-            echo "::error::O contrato entre os jobs build e release está quebrado; valide os outputs declarados do reusable workflow ${WORKFLOW_REF}."
+            echo "::error::release_image vazio no artifact de metadata da imagem para deploy por tag."
+            echo "::error::O deploy por tag depende do artifact bff-image.json; valide o step Save image metadata no caller ${CALLER_WORKFLOW_REF}."
             exit 1
           fi
 
@@ -1837,8 +1913,8 @@ jobs:
             echo "- ref: \`${{ github.ref }}\`"
             echo "- event: \`${{ github.event_name }}\`"
             echo "- environment: \`${{ inputs.environment }}\`"
-            echo "- workflow_ref: \`${{ github.workflow_ref }}\`"
-            echo "- workflow_sha: \`${{ github.workflow_sha }}\`"
+            echo "- caller_workflow_ref: \`${{ github.workflow_ref }}\`"
+            echo "- caller_workflow_sha: \`${{ github.workflow_sha }}\`"
             echo ""
             echo "| Job | Result |"
             echo "|---|---|"
