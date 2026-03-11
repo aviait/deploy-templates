@@ -828,7 +828,7 @@ jobs:
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
-            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME'), process.env.IN_APP_NAME),
+            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME')),
             // Enforce container port 80 for BFF. The host port is configurable via HOST_PORT.
             container_port: 80,
             host_port: pickPositiveInt(0, process.env.IN_HOST_PORT, scopedVar('HOST_PORT')),
@@ -858,6 +858,7 @@ jobs:
           set -euo pipefail
           [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.container_name }}" ] || { echo "::error::container_name ausente (input ou var CONTAINER_NAME[_ENV])."; exit 1; }
           [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
           [ "${{ steps.resolve.outputs.host_port }}" -gt 0 ] || { echo "::error::host_port deve ser > 0 (input ou var HOST_PORT)"; exit 1; }
           [ "${{ steps.resolve.outputs.container_port }}" -gt 0 ] || { echo "::error::container_port deve ser > 0"; exit 1; }
@@ -1006,7 +1007,7 @@ jobs:
             ssh_remote_port: pickPositiveInt(22, process.env.IN_SSH_REMOTE_PORT, scopedVar('SSH_REMOTE_PORT')),
             ssh_known_hosts: pickString(process.env.IN_SSH_KNOWN_HOSTS, scopedVar('SSH_KNOWN_HOSTS')),
             require_ssh_known_hosts: toBool(process.env.IN_REQUIRE_SSH_KNOWN_HOSTS, false) || toBool(scopedVar('REQUIRE_SSH_KNOWN_HOSTS'), false),
-            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME'), process.env.IN_APP_NAME),
+            container_name: pickString(process.env.IN_CONTAINER_NAME, scopedVar('CONTAINER_NAME')),
             // Enforce container port 80 for BFF. The host port is configurable via HOST_PORT.
             container_port: 80,
             host_port: pickPositiveInt(0, process.env.IN_HOST_PORT, scopedVar('HOST_PORT')),
@@ -1036,6 +1037,7 @@ jobs:
           set -euo pipefail
           [ -n "${{ steps.resolve.outputs.ssh_user }}" ] || { echo "::error::ssh_user ausente (input ou var SSH_USER)"; exit 1; }
           [ -n "${{ steps.resolve.outputs.ssh_host }}" ] || { echo "::error::ssh_host ausente (input ou var SSH_HOST)"; exit 1; }
+          [ -n "${{ steps.resolve.outputs.container_name }}" ] || { echo "::error::container_name ausente (input ou var CONTAINER_NAME[_ENV])."; exit 1; }
           [ -n "${{ secrets.PEM_KEY }}" ] || { echo "::error::PEM_KEY ausente"; exit 1; }
           [ "${{ steps.resolve.outputs.host_port }}" -gt 0 ] || { echo "::error::host_port deve ser > 0 (input ou var HOST_PORT)"; exit 1; }
           [ "${{ steps.resolve.outputs.container_port }}" -gt 0 ] || { echo "::error::container_port deve ser > 0"; exit 1; }
@@ -1356,15 +1358,14 @@ jobs:
             fi
           }
 
-          if [ -z "${STAGE_IMAGE}" ] || { [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; }; then
-            echo "::warning::Imagem nao resolvida via outputs (stage/release). Recomputando a partir de inputs + SHA."
-            compute_images
-            if [ -z "${STAGE_IMAGE}" ]; then
-              STAGE_IMAGE="${COMPUTED_STAGE_IMAGE}"
-            fi
-            if [ -z "${RELEASE_IMAGE}" ] && [ -n "${COMPUTED_RELEASE_IMAGE}" ]; then
-              RELEASE_IMAGE="${COMPUTED_RELEASE_IMAGE}"
-            fi
+          if [ -z "${STAGE_IMAGE}" ]; then
+            echo "::error::stage_image vazio nos outputs do job build. O deploy exige a imagem produzida pelo build; nao ha fallback por recomputacao."
+            exit 1
+          fi
+
+          if [ "${IS_TAG}" = "true" ] && [ -z "${RELEASE_IMAGE}" ]; then
+            echo "::error::release_image vazio nos outputs do job release para deploy por tag. Nao ha fallback por recomputacao."
+            exit 1
           fi
 
           TARGET_IMAGE="${STAGE_IMAGE}"
