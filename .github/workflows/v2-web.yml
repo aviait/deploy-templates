@@ -311,6 +311,34 @@ jobs:
           ${{ steps.export_build_env.outputs.exported_keys }}
           EOF
 
+      - name: Validate template-web build env contract
+        run: |
+          set -euo pipefail
+          required_keys=(VITE_APP_ENV VITE_API_BASE_URL VITE_APP_NAME VITE_APP_SHORT_NAME VITE_STORAGE_NAMESPACE)
+          missing_keys=()
+          for key in "${required_keys[@]}"; do
+            value="${!key-}"
+            if [ -z "${value}" ]; then
+              missing_keys+=("${key}")
+            fi
+          done
+
+          if [ "${#missing_keys[@]}" -gt 0 ]; then
+            echo "::error::repo-config/vars incompleto para template-web. Chaves ausentes no build: ${missing_keys[*]}"
+            echo "::error::Reaplique restore-defaults/apply para materializar o contrato completo de build/deploy."
+            exit 1
+          fi
+
+          echo "::notice::template-web build contract resolved (VITE_APP_ENV=${VITE_APP_ENV}, VITE_API_BASE_URL=${VITE_API_BASE_URL}, VITE_APP_NAME=${VITE_APP_NAME}, VITE_STORAGE_NAMESPACE=${VITE_STORAGE_NAMESPACE})."
+          {
+            echo "## template-web build contract"
+            echo "- vite_app_env: ${VITE_APP_ENV}"
+            echo "- vite_api_base_url: ${VITE_API_BASE_URL}"
+            echo "- vite_app_name: ${VITE_APP_NAME}"
+            echo "- vite_app_short_name: ${VITE_APP_SHORT_NAME}"
+            echo "- vite_storage_namespace: ${VITE_STORAGE_NAMESPACE}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build production assets
         run: ${{ inputs.build_cmd }}
 
@@ -590,6 +618,7 @@ jobs:
             echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
             echo "- remote dir configured: ${{ steps.resolve.outputs.remote_dir != '' && 'yes' || 'no' }}"
             echo "- resolved remote dir: ${{ steps.resolve.outputs.remote_dir }}"
+            echo "- smoke url: ${{ steps.resolve.outputs.smoke_url != '' && steps.resolve.outputs.smoke_url || 'not-configured' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:

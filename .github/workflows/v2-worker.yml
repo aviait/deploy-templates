@@ -931,7 +931,7 @@ jobs:
           fi
 
           if [ -z "${{ secrets.DOCKER_RUN_ENVS_FILE }}" ] && [ -z "${{ steps.resolve.outputs.docker_run_envs }}" ]; then
-            echo "::warning::docker_run_envs vazio e DOCKER_RUN_ENVS_FILE não configurado. Secrets não são injetados automaticamente; use DOCKER_RUN_ENVS_FILE para variáveis sensíveis."
+            echo "::warning::docker_run_envs vazio e DOCKER_RUN_ENVS_FILE não configurado. Secrets não são injetados automaticamente; use DOCKER_RUN_ENVS_FILE apenas para secrets-only de runtime."
           fi
 
       - name: Publish pre-deploy summary
@@ -1265,6 +1265,50 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped_other_env_suffix=${skippedOtherEnvSuffix}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `auto_vars_b64=${b64}\n`);
           NODE
+
+      - name: Validate template-worker runtime env contract
+        env:
+          AUTO_VARS_B64: ${{ steps.auto_vars.outputs.auto_vars_b64 }}
+        run: |
+          set -euo pipefail
+          TMP_ENV_FILE="$(mktemp)"
+          trap 'rm -f "${TMP_ENV_FILE}"' EXIT
+          if [ -n "${AUTO_VARS_B64}" ]; then
+            printf '%s' "${AUTO_VARS_B64}" | base64 -d > "${TMP_ENV_FILE}"
+          else
+            : > "${TMP_ENV_FILE}"
+          fi
+
+          required_keys=(APPLICATION NODE_ENV ACRONYM_ENVIRONMENT ENVIRONMENT RABBITMQ_URL WORKER_PRIMARY_QUEUE)
+          missing_keys=()
+          for key in "${required_keys[@]}"; do
+            if ! grep -Eq "^${key}=" "${TMP_ENV_FILE}"; then
+              missing_keys+=("${key}")
+            fi
+          done
+
+          if [ "${#missing_keys[@]}" -gt 0 ]; then
+            echo "::error::repo-config/vars incompleto para template-worker. Chaves ausentes no env-file gerado: ${missing_keys[*]}"
+            echo "::error::Reaplique restore-defaults/apply para materializar o contrato completo de runtime."
+            exit 1
+          fi
+
+          NODE_ENV_VALUE="$(grep -E '^NODE_ENV=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2-)"
+          ACRONYM_VALUE="$(grep -E '^ACRONYM_ENVIRONMENT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2-)"
+          ENVIRONMENT_VALUE="$(grep -E '^ENVIRONMENT=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2-)"
+          DB_ENABLED_VALUE="$(grep -E '^DB_ENABLED=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- || true)"
+          OPENSEARCH_ENABLED_VALUE="$(grep -E '^(OPENSEARCH_ENABLED|ENABLE_OPENSEARCH)=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2- || true)"
+          PRIMARY_QUEUE_VALUE="$(grep -E '^WORKER_PRIMARY_QUEUE=' "${TMP_ENV_FILE}" | tail -n1 | cut -d= -f2-)"
+          echo "::notice::template-worker runtime contract resolved (NODE_ENV=${NODE_ENV_VALUE}, ACRONYM_ENVIRONMENT=${ACRONYM_VALUE}, ENVIRONMENT=${ENVIRONMENT_VALUE}, WORKER_PRIMARY_QUEUE=${PRIMARY_QUEUE_VALUE})."
+          {
+            echo "## template-worker runtime contract"
+            echo "- node_env: ${NODE_ENV_VALUE}"
+            echo "- acronym_environment: ${ACRONYM_VALUE}"
+            echo "- environment: ${ENVIRONMENT_VALUE}"
+            echo "- worker_primary_queue: ${PRIMARY_QUEUE_VALUE}"
+            echo "- db_enabled: ${DB_ENABLED_VALUE:-not-set}"
+            echo "- opensearch_enabled: ${OPENSEARCH_ENABLED_VALUE:-not-set}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/download-artifact@v4
         with:
