@@ -665,17 +665,7 @@ jobs:
           fi
 
           eval "$(
-            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as fp:
-                data = json.load(fp)
-
-            for key in ("registry", "stage_image", "release_image"):
-                value = str(data.get(key, "") or "").strip()
-                print(f"{key.upper()}={value}")
-            PY
+            python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); [print(f"{key.upper()}={str(data.get(key, "") or "").strip()}") for key in ("registry", "stage_image", "release_image")]' "${IMAGE_METADATA_PATH}"
           )"
 
           if [ -z "${REGISTRY}" ]; then
@@ -703,15 +693,7 @@ jobs:
         run: |
           set -euo pipefail
           REGISTRY="$(
-            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as fp:
-                data = json.load(fp)
-
-            print(str(data.get("registry", "") or "").strip())
-            PY
+            python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("registry", "") or "").strip())' "${IMAGE_METADATA_PATH}"
           )"
 
           if [ -z "${DEPLOY_REGISTRY_USERNAME:-}" ] || [ -z "${DEPLOY_REGISTRY_PASSWORD:-}" ]; then
@@ -748,15 +730,7 @@ jobs:
         run: |
           set -euo pipefail
           REGISTRY="$(
-            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as fp:
-                data = json.load(fp)
-
-            print(str(data.get("registry", "") or "").strip())
-            PY
+            python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("registry", "") or "").strip())' "${IMAGE_METADATA_PATH}"
           )"
 
           DEPLOY_REGISTRY_USERNAME="$(printf '%s' "${DEPLOY_REGISTRY_USERNAME}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
@@ -781,17 +755,7 @@ jobs:
         run: |
           set -euo pipefail
           eval "$(
-            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as fp:
-                data = json.load(fp)
-
-            for key in ("stage_image", "release_image"):
-                value = str(data.get(key, "") or "").strip()
-                print(f"{key.upper()}={value}")
-            PY
+            python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); [print(f"{key.upper()}={str(data.get(key, "") or "").strip()}") for key in ("stage_image", "release_image")]' "${IMAGE_METADATA_PATH}"
           )"
 
           if [ -z "${RELEASE_IMAGE}" ]; then
@@ -1337,17 +1301,7 @@ jobs:
           fi
 
           eval "$(
-            python3 - "${IMAGE_METADATA_PATH}" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as fp:
-                data = json.load(fp)
-
-            for key in ("stage_image", "release_image"):
-                value = str(data.get(key, "") or "").strip()
-                print(f"{key.upper()}={value}")
-            PY
+            python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); [print(f"{key.upper()}={str(data.get(key, "") or "").strip()}") for key in ("stage_image", "release_image")]' "${IMAGE_METADATA_PATH}"
           )"
 
           RELEASE_IMAGE_DISPLAY="${RELEASE_IMAGE}"
