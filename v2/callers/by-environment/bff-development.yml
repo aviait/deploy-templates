@@ -34,6 +34,7 @@ jobs:
       security-events: write
     uses: aviait/deploy-templates/.github/workflows/v2-bff.yml@main
     with:
+      app_name: ${{ vars.APP_NAME }}
       environment: ${{ vars.PIPELINE_ENV_DEV || 'dev' }}
       working_directory: apps/bff
       node_version: ${{ vars.NODE_VERSION || '22' }}

@@ -53,6 +53,7 @@ jobs:
       security-events: write
     uses: aviait/deploy-templates/.github/workflows/v2-web.yml@main
     with:
+      app_name: ${{ vars.APP_NAME }}
       environment: ${{ vars.PIPELINE_ENV_PRD || 'prd' }}
       working_directory: ${{ vars.WEB_WORKING_DIRECTORY || '.' }}
       node_version: ${{ vars.WEB_NODE_VERSION || '22' }}

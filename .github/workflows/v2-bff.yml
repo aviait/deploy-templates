@@ -4,9 +4,8 @@ on:
   workflow_call:
     inputs:
       app_name:
-        required: false
+        required: true
         type: string
-        default: ""
       environment:
         required: true
         type: string
@@ -188,6 +187,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          [ -n "${{ inputs.app_name }}" ] || { echo "::error::app_name é obrigatório no caller consumidor."; exit 1; }
           if [ ! -d "${{ inputs.working_directory }}" ]; then
             echo "::error::working_directory '${{ inputs.working_directory }}' não existe no repositório."
             echo "::error::Ajuste o caller para o caminho correto da aplicação."
@@ -816,7 +816,7 @@ jobs:
         id: resolve
         env:
           VARS_JSON: ${{ toJSON(vars) }}
-          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_APP_NAME: ${{ inputs.app_name }}
           IN_SSH_USER: ${{ inputs.ssh_user }}
           IN_SSH_HOST: ${{ inputs.ssh_host }}
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
@@ -971,7 +971,7 @@ jobs:
         run: |
           {
             echo "## pre-deploy-config summary"
-            echo "- app: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}"
+            echo "- app: ${{ inputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ssh host configured: ${{ steps.resolve.outputs.ssh_host != '' && 'yes' || 'no' }}"
             echo "- host_port: ${{ steps.resolve.outputs.host_port }}"
@@ -986,7 +986,7 @@ jobs:
     timeout-minutes: 25
     environment: ${{ inputs.environment }}
     concurrency:
-      group: bff-${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}-${{ inputs.environment }}
+      group: bff-${{ inputs.app_name }}-${{ inputs.environment }}
       cancel-in-progress: true
     permissions:
       contents: read
@@ -995,7 +995,7 @@ jobs:
         id: resolve
         env:
           VARS_JSON: ${{ toJSON(vars) }}
-          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_APP_NAME: ${{ inputs.app_name }}
           IN_SSH_USER: ${{ inputs.ssh_user }}
           IN_SSH_HOST: ${{ inputs.ssh_host }}
           IN_SSH_REMOTE_PORT: ${{ inputs.ssh_remote_port }}
@@ -1875,7 +1875,7 @@ jobs:
         run: |
           {
             echo "## deploy summary"
-            echo "- app: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}"
+            echo "- app: ${{ inputs.app_name }}"
             echo "- environment: ${{ inputs.environment }}"
             echo "- ref: \`${{ github.ref }}\`"
             echo "- docker_run_envs provided: ${{ steps.resolve.outputs.docker_run_envs != '' && 'yes' || 'no' }}"

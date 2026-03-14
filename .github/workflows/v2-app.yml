@@ -4,9 +4,8 @@ on:
   workflow_call:
     inputs:
       app_name:
-        required: false
+        required: true
         type: string
-        default: ""
       environment:
         required: true
         type: string
@@ -170,6 +169,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          [ -n "${{ inputs.app_name }}" ] || { echo "::error::app_name é obrigatório no caller consumidor."; exit 1; }
           if [ ! -d "${{ inputs.working_directory }}" ]; then
             echo "::error::working_directory '${{ inputs.working_directory }}' não existe no repositório."
             echo "::error::Ajuste o caller para o caminho correto da aplicação."
@@ -491,7 +491,7 @@ jobs:
         id: resolve
         env:
           VARS_JSON: ${{ toJSON(vars) }}
-          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_APP_NAME: ${{ inputs.app_name }}
           IN_FIREBASE_APP_ID_ANDROID: ${{ inputs.firebase_app_id_android }}
           IN_FIREBASE_APP_ID_IOS: ${{ inputs.firebase_app_id_ios }}
           IN_FIREBASE_GROUPS: ${{ inputs.firebase_groups }}
@@ -589,14 +589,14 @@ jobs:
     timeout-minutes: 45
     environment: ${{ inputs.environment }}
     concurrency:
-      group: app-${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}-${{ inputs.environment }}
+      group: app-${{ inputs.app_name }}-${{ inputs.environment }}
       cancel-in-progress: false
     steps:
       - name: Resolve deploy config (inputs + GitHub vars)
         id: resolve
         env:
           VARS_JSON: ${{ toJSON(vars) }}
-          IN_APP_NAME: ${{ inputs.app_name != '' && inputs.app_name || github.event.repository.name || github.repository }}
+          IN_APP_NAME: ${{ inputs.app_name }}
           IN_FIREBASE_APP_ID_ANDROID: ${{ inputs.firebase_app_id_android }}
           IN_FIREBASE_APP_ID_IOS: ${{ inputs.firebase_app_id_ios }}
           IN_FIREBASE_GROUPS: ${{ inputs.firebase_groups }}

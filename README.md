@@ -71,7 +71,8 @@ Regra de manutencao:
 - Segurança com dependency audit + gitleaks + CodeQL
 - CI separado de CD, com gates por branch/tag/environment
 - Sem segredos em plain text
-- `app_name` opcional (fallback automático para nome do repositório)
+- `app_name` deve ser informado explicitamente no caller consumidor
+- os reusable workflows falham cedo quando `app_name` não é informado
 
 ## Branches de referência
 

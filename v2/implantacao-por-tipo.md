@@ -74,12 +74,14 @@ Secrets mínimos por environment:
 
 Vars recomendadas:
 - `CONTAINER_PORT` (fixo 80 no template v2).
-- `CONTAINER_NAME` (se não definir, usa `app_name`/repo).
+- `CONTAINER_NAME` (defina explicitamente via repo-config/defaults ou `CONTAINER_NAME_<ENV>`).
 - `HEALTHCHECK_URL`, `HEALTHCHECK_RETRIES`, `HEALTHCHECK_DELAY_SECONDS`.
 - `INJECT_ALL_GIT_VARS`, `GIT_VARS_EXCLUDE`.
 
 Observacao de resolucao por ambiente (BFF):
-- Para variaveis de deploy/runtime (ex.: `CONTAINER_NAME`, `HOST_PORT`, `HEALTHCHECK_URL`), o template prioriza automaticamente sufixos `*_DEV`, `*_HML`, `*_PRD` conforme o ambiente informado no caller.
+- A resolucao parte do `input.environment` do caller.
+- A ordem esperada e: input explicito -> `VAR_<ENV>` materializada para o ambiente informado -> chave base ja materializada.
+- O template nao deve adivinhar ambiente por branch, processo remoto ou contexto implicito.
 
 Secrets opcionais:
 - `DOCKER_RUN_ENVS_FILE` para enviar env-file multiline.
@@ -99,7 +101,7 @@ Arquivos callers:
 Ajustes obrigatórios no caller:
 - `paths`, `working_directory`, `dockerfile`, `registry`, `image_name`.
 - `image_namespace` (opcional): namespace quando `image_name` nao tiver `/` (Docker Hub).
-- Nome de worker opcional (`CONTAINER_NAME`); fallback automático para nome do repo.
+- `CONTAINER_NAME` deve vir do repo-config/defaults ou de `CONTAINER_NAME_<ENV>`.
 
 Vars mínimas por environment:
 - `SSH_USER`
@@ -164,6 +166,7 @@ Opcional (automação de tag):
 - O exemplo dispara somente apos `bff-v2-production` concluir com sucesso em `production`.
 
 ## Observações importantes
-- `app_name` é opcional em todos os templates; fallback automático para nome do repositório.
+- informe `app_name` explicitamente em todos os callers consumidores
+- os reusable workflows validam `app_name` logo no inicio e falham quando o caller omite esse valor
 - Em BFF/Worker, prefira injeção de `vars` por environment para reduzir mapeamentos fixos no caller.
 - Nunca cadastre segredo em `vars`; use sempre `secrets`.

@@ -31,9 +31,10 @@ Este repositório publica reusable workflows para:
 - Worker: mesmo padrão do BFF, com startup checks e rollback automático.
 - App: distribuição Firebase e/ou release via Fastlane.
 
-## app_name automático
-Nos workflows `v2-*.yml`, `app_name` é opcional.
-Se omitido, o template usa automaticamente o nome do repositório.
+## app_name e naming explícito
+- Informe `app_name` explicitamente nos callers consumidores.
+- Os workflows `v2-*.yml` tratam `app_name` como obrigatório e falham cedo quando o caller omite esse valor.
+- `container_name`, repo-config e naming operacional por ambiente devem continuar vindo de repo-config/defaults ou inputs explícitos.
 
 ## Injeção automática de vars
 - BFF/Worker: `vars` do GitHub podem ser injetadas automaticamente no container (env-file), sem mapeamento explícito no caller.

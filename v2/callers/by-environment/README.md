@@ -26,9 +26,10 @@ Em cada environment (`dev`, `hml`, `prd`), cadastre os mesmos nomes:
 - Worker: `SSH_USER`, `SSH_HOST`, `PEM_KEY`, `DEPLOY_REGISTRY_USERNAME`, `DEPLOY_REGISTRY_PASSWORD`, `REGISTRY`, `IMAGE_NAMESPACE`, `IMAGE_NAME`
 - App: `FIREBASE_TOKEN` e credenciais mobile (`ANDROID_*`, `IOS_*`, `APP_STORE_CONNECT_*`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`)
 
-## app_name automático
-Nos workflows genéricos, `app_name` é opcional.
-Se não for enviado, o nome da aplicação é resolvido automaticamente pelo nome do repositório.
+## app_name explícito
+- Informe `app_name` explicitamente em todos os callers copiados para o repositório consumidor.
+- Os workflows `v2-*.yml` falham cedo quando `app_name` não é informado.
+- Esse valor deve representar a identidade operacional do app, não o nome do repositório por inferência.
 
 ## Injeção automática de vars no container
 - BFF/Worker: as `vars` do GitHub podem ser injetadas automaticamente no `docker run` (env-file), mesmo sem mapeamento explícito no caller.

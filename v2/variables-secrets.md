@@ -143,7 +143,7 @@ Notas de release (tags):
 | `SSH_REMOTE_PORT`             | nao          | `22`                   | Porta SSH remota.                                                                                                      |
 | `SSH_KNOWN_HOSTS`             | condicional  | -                      | Host key fixa para conexao segura.                                                                                     |
 | `REQUIRE_SSH_KNOWN_HOSTS`     | nao          | `false`                | Exige pinning explicito de host key.                                                                                   |
-| `CONTAINER_NAME`              | nao          | `app_name`             | Nome do container `docker run`.                                                                                        |
+| `CONTAINER_NAME`              | nao          | sem fallback automático | Nome do container `docker run`. Defina via repo-config/defaults ou `CONTAINER_NAME_<ENV>`.                           |
 | `CONTAINER_PORT`              | nao          | `80` (fixo)            | Porta interna do container para BFF. No template v2, o deploy sempre mapeia `HOST_PORT` para `80` (`-p HOST_PORT:80`). |
 | `HOST_PORT`                   | sim (deploy) | sem default util (`0`) | Porta publica no host (`-p HOST_PORT:80`).                                                                             |
 | `DOCKER_RUN_ENVS`             | nao          | vazio                  | Variaveis inline para `docker run` (formato `KEY=VALUE`, multiline).                                                   |
@@ -209,7 +209,7 @@ Notas de release (tags):
 | `SSH_REMOTE_PORT`             | nao          | `22`       | Porta SSH remota.                                                               |
 | `SSH_KNOWN_HOSTS`             | condicional  | -          | Host key fixa para SSH.                                                         |
 | `REQUIRE_SSH_KNOWN_HOSTS`     | nao          | `false`    | Exige known_hosts definido manualmente.                                         |
-| `CONTAINER_NAME`              | nao          | `app_name` | Nome do container do worker.                                                    |
+| `CONTAINER_NAME`              | nao          | sem fallback automático | Nome do container do worker. Defina via repo-config/defaults ou `CONTAINER_NAME_<ENV>`. |
 | `DOCKER_RUN_ENVS`             | nao          | vazio      | Variaveis inline para `docker run` do worker.                                   |
 | `DOCKER_EXTRA_ARGS`           | nao          | vazio      | Argumentos extras de `docker run` para worker.                                  |
 | `REMOTE_DOCKER_LOGIN`         | nao          | `true`     | Login no registry no host remoto antes de pull.                                 |
@@ -295,6 +295,7 @@ Workflow: `v2-app.yml`
 
 ## app_name
 
-- `app_name` e opcional em todos os workflows `v2-*.yml`.
-- Quando omitido, o template usa o nome do repositorio (`github.event.repository.name`).
-- Esse valor e usado para naming padrao (ex.: nome de container/worker quando nao definido explicitamente).
+- informe `app_name` explicitamente em todos os workflows `v2-*.yml` consumidores.
+- os reusable workflows falham cedo quando `app_name` chega vazio.
+- esse campo e a fonte explicita de naming operacional para resumo, concorrencia e deploy.
+- `CONTAINER_NAME`, `HOST_PORT` e demais variaveis de deploy devem vir de repo-config/defaults, `vars` por environment ou input explicito.
