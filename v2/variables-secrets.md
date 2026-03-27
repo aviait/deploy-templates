@@ -296,6 +296,8 @@ Workflow: `v2-app.yml`
 ## app_name
 
 - informe `app_name` explicitamente em todos os workflows `v2-*.yml` consumidores.
+- em repositórios provisionados pelo `cloudprovision`, use `vars.APP_NAME` materializada a partir de `repo_template_defaults`/repo-config local via `restore-defaults` e `apply`.
+- se o repositório consumidor não usar o produto, cadastre `APP_NAME` manualmente em `Repository Variables`.
 - os reusable workflows falham cedo quando `app_name` chega vazio.
 - esse campo e a fonte explicita de naming operacional para resumo, concorrencia e deploy.
 - `CONTAINER_NAME`, `HOST_PORT` e demais variaveis de deploy devem vir de repo-config/defaults, `vars` por environment ou input explicito.

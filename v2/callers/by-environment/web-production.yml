@@ -68,7 +68,7 @@ jobs:
       artifact_name: ${{ vars.WEB_ARTIFACT_NAME || 'web-build' }}
       dns_name: ${{ vars.WEB_DNS || vars.DNS_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
-      enable_release: true
+      enable_release: false
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}

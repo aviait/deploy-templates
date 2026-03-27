@@ -33,6 +33,8 @@ Este repositório publica reusable workflows para:
 
 ## app_name e naming explícito
 - Informe `app_name` explicitamente nos callers consumidores.
+- Em repositórios provisionados pelo `cloudprovision`, preencha esse campo com `vars.APP_NAME` materializada via repo-config/defaults (`restore-defaults` -> `apply`).
+- Se o repositório consumidor não for gerenciado pelo produto, defina `APP_NAME` manualmente em `Repository Variables`.
 - Os workflows `v2-*.yml` tratam `app_name` como obrigatório e falham cedo quando o caller omite esse valor.
 - `container_name`, repo-config e naming operacional por ambiente devem continuar vindo de repo-config/defaults ou inputs explícitos.
 

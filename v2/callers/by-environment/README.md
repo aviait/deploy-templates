@@ -28,6 +28,8 @@ Em cada environment (`dev`, `hml`, `prd`), cadastre os mesmos nomes:
 
 ## app_name explícito
 - Informe `app_name` explicitamente em todos os callers copiados para o repositório consumidor.
+- Em repositórios provisionados pelo `cloudprovision`, esse valor deve vir de `vars.APP_NAME` materializada pelo fluxo de repo-config (`restore-defaults` -> `apply`).
+- Se o repositório não for provisionado pelo produto, cadastre `APP_NAME` manualmente em `Repository Variables`.
 - Os workflows `v2-*.yml` falham cedo quando `app_name` não é informado.
 - Esse valor deve representar a identidade operacional do app, não o nome do repositório por inferência.
 

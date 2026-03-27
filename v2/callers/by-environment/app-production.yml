@@ -61,7 +61,7 @@ jobs:
       fastlane_android_lane: ${{ vars.APP_FASTLANE_ANDROID_LANE || 'android release' }}
       fastlane_ios_lane: ${{ vars.APP_FASTLANE_IOS_LANE || 'ios release' }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
-      enable_release: true
+      enable_release: false
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.CHECKOUT_TOKEN }}

@@ -72,6 +72,7 @@ Regra de manutencao:
 - CI separado de CD, com gates por branch/tag/environment
 - Sem segredos em plain text
 - `app_name` deve ser informado explicitamente no caller consumidor
+- em repositórios provisionados pelo `cloudprovision`, `vars.APP_NAME` deve ser materializada a partir do repo-config/defaults via `restore-defaults`/`apply`
 - os reusable workflows falham cedo quando `app_name` não é informado
 
 ## Branches de referência

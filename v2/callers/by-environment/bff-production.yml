@@ -52,7 +52,7 @@ jobs:
       image_namespace: ${{ vars.IMAGE_NAMESPACE }}
       image_name: ${{ vars.IMAGE_NAME }}
       semver_prefix: ${{ vars.PIPELINE_SEMVER_PREFIX || 'v' }}
-      enable_release: true
+      enable_release: false
       deploy_on_tag_only: ${{ vars.PIPELINE_ENABLE_PROD_FROM_BRANCH != 'true' }}
       inject_all_git_vars: ${{ vars.INJECT_ALL_GIT_VARS != 'false' }}
       git_vars_exclude: ${{ vars.GIT_VARS_EXCLUDE }}
