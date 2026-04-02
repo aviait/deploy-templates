@@ -1,0 +1,52 @@
+name: Engineering task
+description: Non-feature engineering task (maintenance, refactor, tooling)
+title: '[Task] '
+labels:
+  - task
+  - triage
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What needs to be done?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this task necessary now?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Include/exclude boundaries
+      placeholder: |
+        Includes:
+        - ...
+        Excludes:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Execution checklist
+      placeholder: |
+        - [ ] Step 1
+        - [ ] Step 2
+        - [ ] Step 3
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: Objective completion criteria
+    validations:
+      required: true

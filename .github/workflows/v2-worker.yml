@@ -211,9 +211,12 @@ jobs:
             *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
           esac
 
-      - run: ${{ inputs.lint_cmd }}
-      - run: ${{ inputs.typecheck_cmd }}
-      - run: ${{ inputs.test_cmd }}
+      - name: Lint
+        run: ${{ inputs.lint_cmd }}
+      - name: Typecheck
+        run: ${{ inputs.typecheck_cmd }}
+      - name: Test
+        run: ${{ inputs.test_cmd }}
 
   build:
     name: build
@@ -573,57 +576,59 @@ jobs:
         with:
           token: ${{ secrets.CHECKOUT_TOKEN || secrets.GIT_TOKEN || github.token }}
 
-      # - name: Setup Node
-      #   if: ${{ inputs.cache_dependency_path == '' }}
-      #   uses: actions/setup-node@v6
-      #   with:
-      #     node-version: ${{ inputs.node_version }}
-      #     cache: ${{ inputs.package_manager }}
+      - name: Setup Node
+        if: ${{ inputs.cache_dependency_path == '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
 
-      # - name: Setup Node (custom cache path)
-      #   if: ${{ inputs.cache_dependency_path != '' }}
-      #   uses: actions/setup-node@v6
-      #   with:
-      #     node-version: ${{ inputs.node_version }}
-      #     cache: ${{ inputs.package_manager }}
-      #     cache-dependency-path: ${{ inputs.cache_dependency_path }}
+      - name: Setup Node (custom cache path)
+        if: ${{ inputs.cache_dependency_path != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
-      # - name: Setup pnpm
-      #   if: ${{ inputs.package_manager == 'pnpm' }}
-      #   uses: pnpm/action-setup@v4
-      #   with:
-      #     version: ${{ inputs.pnpm_version }}
+      - name: Setup pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
 
-      # - name: Install (reproducible)
-      #   run: |
-      #     set -euo pipefail
-      #     case "${{ inputs.package_manager }}" in
-      #       npm) npm ci ;;
-      #       yarn) corepack enable && yarn install --immutable ;;
-      #       pnpm) corepack enable && pnpm install --frozen-lockfile ;;
-      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-      #     esac
+      - name: Install (reproducible)
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm ci ;;
+            yarn) corepack enable && yarn install --immutable ;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
 
-      # - name: Dependency audit
-      #   run: |
-      #     set -euo pipefail
-      #     case "${{ inputs.package_manager }}" in
-      #       npm) npm audit --audit-level=high ;;
-      #       yarn)
-      #         if yarn npm audit --all >/dev/null 2>&1; then
-      #           yarn npm audit --all --recursive
-      #         else
-      #           yarn audit --level high
-      #         fi
-      #         ;;
-      #       pnpm) pnpm audit --audit-level high ;;
-      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-      #     esac
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+        continue-on-error: true
 
-      # - name: Secret scanning (gitleaks)
-      #   uses: gitleaks/gitleaks-action@v2
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+        continue-on-error: true
 
       # - name: Initialize CodeQL
       #   uses: github/codeql-action/init@v3
@@ -786,7 +791,7 @@ jobs:
 
   pre_deploy_config:
     name: pre-deploy-config
-    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name == 'pull_request' }}
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name != 'pull_request' }}
     needs: [build, security, release]
     runs-on: ubuntu-latest
     timeout-minutes: 10

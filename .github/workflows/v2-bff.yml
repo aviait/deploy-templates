@@ -235,9 +235,12 @@ jobs:
             *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
           esac
 
-      - run: ${{ inputs.lint_cmd }}
-      - run: ${{ inputs.typecheck_cmd }}
-      - run: ${{ inputs.test_cmd }}
+      - name: Lint
+        run: ${{ inputs.lint_cmd }}
+      - name: Typecheck
+        run: ${{ inputs.typecheck_cmd }}
+      - name: Test
+        run: ${{ inputs.test_cmd }}
 
   build:
     name: build
@@ -622,26 +625,28 @@ jobs:
             *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
           esac
 
-      # - name: Dependency audit
-      #   run: |
-      #     set -euo pipefail
-      #     case "${{ inputs.package_manager }}" in
-      #       npm) npm audit --audit-level=high ;;
-      #       yarn)
-      #         if yarn npm audit --all >/dev/null 2>&1; then
-      #           yarn npm audit --all --recursive
-      #         else
-      #           yarn audit --level high
-      #         fi
-      #         ;;
-      #       pnpm) pnpm audit --audit-level high ;;
-      #       *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
-      #     esac
+      - name: Dependency audit
+        run: |
+          set -euo pipefail
+          case "${{ inputs.package_manager }}" in
+            npm) npm audit --audit-level=high ;;
+            yarn)
+              if yarn npm audit --all >/dev/null 2>&1; then
+                yarn npm audit --all --recursive
+              else
+                yarn audit --level high
+              fi
+              ;;
+            pnpm) pnpm audit --audit-level high ;;
+            *) echo "::error::PACKAGE_MANAGER inválido"; exit 1 ;;
+          esac
+        continue-on-error: true
 
-      # - name: Secret scanning (gitleaks)
-      #   uses: gitleaks/gitleaks-action@v2
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN || github.token }}
+        continue-on-error: true
 
       # - name: Initialize CodeQL
       #   uses: github/codeql-action/init@v3
@@ -804,7 +809,7 @@ jobs:
 
   pre_deploy_config:
     name: pre-deploy-config
-    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name == 'pull_request' }}
+    if: ${{ always() && needs.build.result == 'success' && needs.security.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') && github.event_name != 'pull_request' }}
     needs: [build, security, release]
     runs-on: ubuntu-latest
     timeout-minutes: 10

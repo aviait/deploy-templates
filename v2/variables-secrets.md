@@ -59,11 +59,13 @@ Observacao:
 
 - Para `web`, `bff` e `worker`, as obrigatorias acima aceitam forma sufixada por ambiente (`*_DEV`, `*_HML`, `*_PRD`) com fallback para a chave base.
 
-## Variaveis legadas (nao usadas no modelo atual by-environment)
+## Variaveis legadas (DEPRECATED - NÃO usadas nos workflows v2)
 
-- `PIPELINE_BRANCH_DEV`, `PIPELINE_BRANCH_HML`, `PIPELINE_BRANCH_PRD`
-- `PIPELINE_ENABLE_DEV`, `PIPELINE_ENABLE_HML`, `PIPELINE_ENABLE_PRD`
-- `PIPELINE_ENABLE_PROD_FROM_TAG`
+As variaveis abaixo pertencem a versoes anteriores dos templates e **nao tem nenhum efeito nos workflows v2** (`v2-bff.yml`, `v2-web.yml`, `v2-worker.yml`, `v2-app.yml`). Nao cadastre nem referencie estas variaveis em repositorios que usam callers v2:
+
+- `PIPELINE_BRANCH_DEV`, `PIPELINE_BRANCH_HML`, `PIPELINE_BRANCH_PRD` -- o filtro de branches e feito no `on:` do caller
+- `PIPELINE_ENABLE_DEV`, `PIPELINE_ENABLE_HML`, `PIPELINE_ENABLE_PRD` -- o controle de ambientes e feito pela existencia do caller dedicado
+- `PIPELINE_ENABLE_PROD_FROM_TAG` -- substituido pelo modelo de callers dedicados com filtro `on: push: tags:`
 
 ## Web
 

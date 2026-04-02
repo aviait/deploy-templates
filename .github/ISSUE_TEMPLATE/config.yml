@@ -1,0 +1,9 @@
+# Replace <your-org>/<your-repo> after creating a repository from this template.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/<your-org>/<your-repo>/security/advisories/new
+    about: Use private advisories for security reports. Do not create public issues.
+  - name: General support
+    url: https://github.com/<your-org>/<your-repo>/discussions
+    about: Ask usage or troubleshooting questions in Discussions.

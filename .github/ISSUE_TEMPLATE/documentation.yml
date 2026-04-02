@@ -1,0 +1,37 @@
+name: Documentation improvement
+description: Report missing, outdated, or unclear documentation
+title: '[Docs] '
+labels:
+  - documentation
+  - triage
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: File/path/section that needs improvement
+      placeholder: README.md, CONTRIBUTING.md, endpoint docs, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: Current issue
+      description: What is missing, wrong, or unclear?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Proposed improvement
+      description: What should be written/updated?
+    validations:
+      required: true
+
+  - type: textarea
+    id: audience
+    attributes:
+      label: Target audience
+      description: Who is impacted? (new contributors, backend team, ops, etc.)

@@ -1,0 +1,97 @@
+name: Bug report
+description: Report a reproducible defect
+title: '[Bug] '
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this issue.
+        Please provide enough detail so we can reproduce and fix it quickly.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How critical is this issue?
+      options:
+        - Critical (service unavailable / data loss)
+        - High (major functionality impacted)
+        - Medium (workaround available)
+        - Low (minor impact)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production
+        - Staging
+        - Development
+        - Local
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Release tag, branch, or commit hash
+      placeholder: v1.2.3 or abc1234
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened and what should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal sequence to reproduce
+      placeholder: |
+        1. Run `...`
+        2. Call `...`
+        3. Observe `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Impact scope
+      description: Which modules/endpoints/users are affected?
+      placeholder: auth, /users/me, only admin users, etc.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, recordings, links, related issues

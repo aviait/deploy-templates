@@ -1,0 +1,66 @@
+name: Feature request
+description: Suggest a new capability or improvement
+title: '[Feature] '
+labels:
+  - enhancement
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new capabilities or relevant improvements.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe expected behavior and technical approach
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List objective conditions for completion
+      placeholder: |
+        - [ ] Condition 1
+        - [ ] Condition 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: api_impact
+    attributes:
+      label: API / contract impact
+      description: Describe request/response or behavior changes (if any)
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Business priority
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and dependencies
+      description: Infra, migrations, external services, sequencing
